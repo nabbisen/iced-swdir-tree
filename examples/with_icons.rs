@@ -47,7 +47,7 @@ impl App {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Tree(event) => {
-                if let DirectoryTreeEvent::Selected(p, _) = &event {
+                if let DirectoryTreeEvent::Selected(p, _, _) = &event {
                     self.last_selected = Some(p.clone());
                 }
                 self.tree.update(event).map(Message::Tree)

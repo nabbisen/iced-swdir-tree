@@ -34,7 +34,9 @@
 //!         match message {
 //!             Message::Tree(event) => {
 //!                 // Observe app-level side effects BEFORE passing to the widget.
-//!                 if let DirectoryTreeEvent::Selected(path, is_dir) = &event {
+//!                 // The third field is the `SelectionMode` (Replace/Toggle/ExtendRange);
+//!                 // match it with `_` when you only care about which path was clicked.
+//!                 if let DirectoryTreeEvent::Selected(path, is_dir, _) = &event {
 //!                     println!("selected {:?} (dir={})", path, is_dir);
 //!                 }
 //!                 self.tree.update(event).map(Message::Tree)
@@ -48,6 +50,15 @@
 //! }
 //! # fn main() {}
 //! ```
+//!
+//! ## Multi-select
+//!
+//! Shift/Ctrl-click support is covered in `examples/multi_select.rs`
+//! — the built-in view always emits `SelectionMode::Replace` because
+//! iced 0.14's button `on_press` can't observe modifier keys.
+//! Applications that want multi-select track modifier state via a
+//! keyboard subscription and rewrite the mode in their own update
+//! handler using [`SelectionMode::from_modifiers`].
 //!
 //! ## Feature flags
 //!
@@ -71,6 +82,7 @@ pub use crate::directory_tree::{
     executor::{ScanExecutor, ScanFuture, ScanJob, ThreadExecutor},
     message::{DirectoryTreeEvent, LoadPayload},
     node::TreeNode,
+    selection::SelectionMode,
 };
 
 #[cfg(feature = "icons")]

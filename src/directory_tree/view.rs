@@ -28,6 +28,7 @@ use super::DirectoryTree;
 use super::icon::{Icon, render as icon_render};
 use super::message::DirectoryTreeEvent;
 use super::node::TreeNode;
+use super::selection::SelectionMode;
 
 /// Per-indent-level horizontal padding in logical pixels.
 const INDENT_STEP: f32 = 16.0;
@@ -171,7 +172,16 @@ where
             } else {
                 button::text
             })
-            .on_press(on_event(DirectoryTreeEvent::Selected(path, is_dir)))
+            // Plain click always emits Replace — iced 0.14's button
+            // `on_press` can't observe modifier keys. Apps that want
+            // multi-select intercept this event and rewrite the
+            // mode based on modifier state they track via the
+            // keyboard subscription. See `examples/multi_select.rs`.
+            .on_press(on_event(DirectoryTreeEvent::Selected(
+                path,
+                is_dir,
+                SelectionMode::Replace,
+            )))
     };
 
     // Left indent. Using a Space rather than padding so the selection

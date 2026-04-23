@@ -13,6 +13,7 @@ pub(crate) mod icon;
 pub(crate) mod keyboard;
 pub(crate) mod message;
 pub(crate) mod node;
+pub(crate) mod selection;
 pub(crate) mod update;
 pub(crate) mod view;
 pub(crate) mod walker;
@@ -58,25 +59,33 @@ pub struct DirectoryTree {
     /// results when the same folder is expanded, collapsed, expanded
     /// again (or when the tree is dropped / replaced).
     pub(crate) generation: u64,
-    /// Canonical selection cursor.
+    /// The set of currently-selected paths.
     ///
-    /// This is the single source of truth for which node is selected.
-    /// [`TreeNode::is_selected`] is treated as a view-layer cache —
-    /// updated in lockstep with this field by the update layer — so the
-    /// view can continue to read selection state node-local without
-    /// chasing a pointer on every row.
+    /// v0.3 replaces v0.2's single `selected_path: Option<PathBuf>`
+    /// with a Vec for multi-select. The order here is **not**
+    /// semantically meaningful — treat it as a set. If you need the
+    /// "most recently touched" path (for e.g. a detail pane), use
+    /// [`DirectoryTree::active_path`]; if you need the pivot for
+    /// range extension, use [`DirectoryTree::anchor_path`].
     ///
-    /// Keeping selection keyed by path rather than stored on the node
-    /// has two payoffs:
+    /// `TreeNode::is_selected` is a view-layer cache kept in sync
+    /// with this set by [`DirectoryTree::sync_selection_flags`].
+    pub(crate) selected_paths: Vec<std::path::PathBuf>,
+    /// The path the user most recently acted on (click, Space, etc.).
     ///
-    /// 1. Runtime filter changes survive. `set_filter` rebuilds every
-    ///    loaded directory's `children` Vec from the raw cache, which
-    ///    constructs brand-new `TreeNode`s; storing selection per-path
-    ///    lets us re-mark the correct new node afterwards.
-    /// 2. A selected path that becomes invisible (filtered out, or its
-    ///    parent collapsed) is not lost — it comes back the moment the
-    ///    filter or expansion state makes it visible again.
-    pub(crate) selected_path: Option<std::path::PathBuf>,
+    /// This is also what [`DirectoryTree::selected_path`] returns,
+    /// which preserves v0.2's single-select API semantics for apps
+    /// that never used multi-select.
+    pub(crate) active_path: Option<std::path::PathBuf>,
+    /// The pivot for Shift+click range extension.
+    ///
+    /// Set by [`SelectionMode::Replace`](crate::SelectionMode) and
+    /// [`SelectionMode::Toggle`](crate::SelectionMode);
+    /// deliberately **not** updated by
+    /// [`SelectionMode::ExtendRange`](crate::SelectionMode) so
+    /// successive Shift+clicks all extend from the same origin —
+    /// matching Windows Explorer / Finder / VS Code behaviour.
+    pub(crate) anchor_path: Option<std::path::PathBuf>,
     /// Pluggable executor that runs blocking `scan_dir` calls.
     ///
     /// Defaults to [`ThreadExecutor`] (one `std::thread::spawn` per
@@ -106,7 +115,9 @@ impl DirectoryTree {
             },
             cache: TreeCache::default(),
             generation: 0,
-            selected_path: None,
+            selected_paths: Vec::new(),
+            active_path: None,
+            anchor_path: None,
             executor: Arc::new(ThreadExecutor),
         }
     }
@@ -159,29 +170,28 @@ impl DirectoryTree {
     /// visible children from the unfiltered cache, so the change is
     /// instant — no re-scan, no blocking the UI.
     ///
-    /// **Selection is preserved.** Selection is kept by path in
-    /// [`DirectoryTree::selected_path`], not on the [`TreeNode`]s that
-    /// this call rebuilds, so the selection cursor survives the filter
-    /// swap. If the selected node becomes invisible under the new
-    /// filter it is not lost — flipping the filter back will re-reveal
-    /// the selection unchanged.
+    /// **Selection is preserved.** Selection is kept by path on the
+    /// widget, not on the [`TreeNode`]s that this call rebuilds, so
+    /// every selected path survives the filter swap. Paths that
+    /// become invisible under the new filter are not lost — flipping
+    /// the filter back re-reveals them unchanged. This is true for
+    /// both single and multi-select.
     ///
     /// **Expansion state is preserved too.** `rebuild_from_cache`
-    /// copies `is_expanded` from the old node into its freshly-built
-    /// replacement, so a directory the user had opened stays open.
+    /// copies the whole child subtree from the old node into its
+    /// freshly-built replacement, so directories the user had opened
+    /// stay open.
     pub fn set_filter(&mut self, filter: DirectoryFilter) {
         if self.config.filter == filter {
             return;
         }
         self.config.filter = filter;
         rebuild_from_cache(&mut self.root, &self.cache, filter);
-        // Re-apply selection onto the new node graph. The selection
-        // cursor (`self.selected_path`) is authoritative; the
-        // per-node `is_selected` cache needs re-syncing after any
-        // mutation that drops and recreates nodes.
-        if let Some(p) = self.selected_path.clone() {
-            self.sync_selection_flag(&p);
-        }
+        // Re-apply selection onto the new node graph. The `selected_paths`
+        // Vec is authoritative; the per-node `is_selected` caches
+        // need re-syncing after any mutation that drops and recreates
+        // nodes.
+        self.sync_selection_flags();
     }
 
     /// Return the root path.
@@ -199,28 +209,69 @@ impl DirectoryTree {
         self.config.max_depth
     }
 
-    /// Return a reference to the currently selected node's path, if any.
+    /// Return a reference to the currently-active selected path, if any.
     ///
-    /// Selection is stored as a path cursor ([`DirectoryTree::selected_path`])
-    /// on the widget, not on individual nodes, so this is O(1) and it
-    /// survives both filter changes and ancestor collapse/expand cycles.
-    /// The returned path may point to a node that is currently invisible
-    /// (because an ancestor is collapsed, or because the active filter
-    /// hides it); the view layer handles that gracefully.
+    /// The active path is the path the user most recently acted on —
+    /// the last row clicked, the last Space-toggled, the last target
+    /// of a Shift-range, etc. For single-select applications this is
+    /// exactly the one selected path and matches v0.2 semantics.
+    ///
+    /// For multi-select, use [`DirectoryTree::selected_paths`] to see
+    /// the whole set and [`DirectoryTree::anchor_path`] to read the
+    /// pivot for range extension.
+    ///
+    /// The returned path may point to a node that is currently
+    /// invisible (because an ancestor is collapsed, or because the
+    /// active filter hides it); the view layer handles that
+    /// gracefully.
     pub fn selected_path(&self) -> Option<&std::path::Path> {
-        self.selected_path.as_deref()
+        self.active_path.as_deref()
     }
 
-    /// Re-apply [`DirectoryTree::selected_path`] to the per-node
+    /// All currently-selected paths.
+    ///
+    /// Order is not semantically meaningful — treat the slice as a
+    /// set. The slice is empty iff nothing is selected. Runs in
+    /// O(1) (returns a reference to the internal Vec).
+    pub fn selected_paths(&self) -> &[std::path::PathBuf] {
+        &self.selected_paths
+    }
+
+    /// The anchor used as the pivot for
+    /// [`SelectionMode::ExtendRange`](crate::SelectionMode).
+    ///
+    /// The anchor is set by `Replace` and `Toggle` selections, and
+    /// is *not* moved by `ExtendRange` — so two successive
+    /// `Shift+click`s from the same starting point select different
+    /// ranges with the same origin.
+    ///
+    /// Returns `None` before the first selection.
+    pub fn anchor_path(&self) -> Option<&std::path::Path> {
+        self.anchor_path.as_deref()
+    }
+
+    /// `true` if `path` is in the selected set. O(n) in the set size.
+    pub fn is_selected(&self, path: &std::path::Path) -> bool {
+        self.selected_paths.iter().any(|p| p == path)
+    }
+
+    /// Re-apply [`DirectoryTree::selected_paths`] to the per-node
     /// `is_selected` flags used by the view.
     ///
     /// Called after any operation that may have replaced nodes
     /// (e.g. `set_filter`, a fresh `Loaded` payload arriving for a
-    /// directory that contains the selected child).
-    pub(crate) fn sync_selection_flag(&mut self, target: &std::path::Path) {
+    /// directory that contains selected children). Clearing every
+    /// flag and then re-setting only those in `selected_paths`
+    /// keeps the view in lockstep with the authoritative set.
+    pub(crate) fn sync_selection_flags(&mut self) {
         self.root.clear_selection();
-        if let Some(node) = self.root.find_mut(target) {
-            node.is_selected = true;
+        // Clone the paths out to avoid a borrow clash; the set is
+        // typically small (selected paths, not total nodes).
+        let paths: Vec<std::path::PathBuf> = self.selected_paths.clone();
+        for p in &paths {
+            if let Some(node) = self.root.find_mut(p) {
+                node.is_selected = true;
+            }
         }
     }
 }

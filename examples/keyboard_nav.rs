@@ -57,7 +57,7 @@ impl App {
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Tree(event) => {
-                if let DirectoryTreeEvent::Selected(p, _) = &event {
+                if let DirectoryTreeEvent::Selected(p, _, _) = &event {
                     self.last_selected = Some(p.clone());
                 }
                 self.tree.update(event).map(Message::Tree)
@@ -68,7 +68,7 @@ impl App {
                 // back through update so state transitions (cursor
                 // move, expand/collapse) actually happen.
                 if let Some(event) = self.tree.handle_key(&key, mods) {
-                    if let DirectoryTreeEvent::Selected(p, _) = &event {
+                    if let DirectoryTreeEvent::Selected(p, _, _) = &event {
                         self.last_selected = Some(p.clone());
                     }
                     return self.tree.update(event).map(Message::Tree);

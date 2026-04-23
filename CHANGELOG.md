@@ -5,6 +5,71 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-04-23
+
+Delivers the first of the five v1.0-required roadmap items:
+**multi-select** (Shift/Ctrl-click, Shift-arrow, Space-toggle).
+
+### Added
+
+- **Multi-select via [`SelectionMode`].** New public enum with three
+  variants — `Replace` (default / plain click), `Toggle`
+  (Ctrl/Cmd-click), and `ExtendRange` (Shift-click). A
+  `from_modifiers(Modifiers)` convenience maps an iced `Modifiers`
+  value to the right mode.
+- **Three new accessors on `DirectoryTree`:**
+  - `selected_paths() -> &[PathBuf]` — the full selected set.
+  - `anchor_path() -> Option<&Path>` — the pivot for `ExtendRange`
+    (not moved by `ExtendRange` itself, matching Explorer/Finder).
+  - `is_selected(&Path) -> bool` — membership check.
+- **Keyboard multi-select:**
+  - `Shift + ↑/↓/Home/End` extend the selected range.
+  - `Space` and `Ctrl+Space` toggle the active path in/out of the
+    set (changed from v0.2 — see BREAKING below).
+- **`examples/multi_select.rs`** — full working demo showing the
+  modifier-tracking pattern and a live multi-selection status bar.
+
+### Changed — BREAKING
+
+- `DirectoryTreeEvent::Selected(PathBuf, bool)` →
+  `DirectoryTreeEvent::Selected(PathBuf, bool, SelectionMode)`. Existing
+  apps only need to add `SelectionMode::Replace` (or `_` in
+  pattern-matches where mode is irrelevant). Migration is a one-line
+  sed per match site.
+- Internal state: `selected_path: Option<PathBuf>` is replaced by three
+  fields (`selected_paths: Vec<PathBuf>`, `active_path: Option<PathBuf>`,
+  `anchor_path: Option<PathBuf>`). The public `selected_path()` accessor
+  still returns the last-touched path, preserving v0.2 semantics for
+  single-select callers — no change required for apps that don't
+  care about multi-select.
+- `handle_key` now uses the `modifiers` argument (ignored in v0.2).
+  `Space` is now `Toggle` instead of "re-emit current selection" — the
+  v0.2 behaviour was rarely useful and the new one matches VS Code,
+  Finder, and Explorer.
+
+### View-level click behaviour
+
+The built-in view emits `Selected(path, is_dir, SelectionMode::Replace)`
+on every click because iced 0.14's `button::on_press` callback cannot
+observe modifier keys. Applications that want multi-select track
+modifier state themselves via a `keyboard::listen()` subscription and
+rewrite the mode before forwarding — see `examples/multi_select.rs`.
+This will become unnecessary if a future iced release exposes
+modifiers at press time.
+
+### Test coverage
+
+- 70 tests pass (up from 52 in v0.2):
+  - 41 unit tests (was 27): + 5 `SelectionMode`, + 3 shift/ctrl
+    keyboard binding tests, + 6 multi-select state-machine tests.
+  - 10 integration tests (unchanged count; all migrated to the
+    3-arg `Selected` form).
+  - 18 tree-layer tests (was 14): + 4 new v0.3 multi-select
+    integration tests over a real filesystem (toggle builds up a
+    set, range covers siblings, filter change preserves every
+    selected path, `selected_path()` tracks the last action target).
+  - 1 compile-only doctest.
+
 ## [0.2.0] — 2026-04-23
 
 The v0.2 release knocks out every item on the v0.2 — v0.3 roadmap

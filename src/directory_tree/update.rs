@@ -17,6 +17,7 @@ use iced::Task;
 use super::DirectoryTree;
 use super::message::{DirectoryTreeEvent, LoadPayload};
 use super::node::{LoadedEntry, TreeNode};
+use super::selection::SelectionMode;
 use super::walker;
 
 impl DirectoryTree {
@@ -41,8 +42,8 @@ impl DirectoryTree {
     pub fn update(&mut self, msg: DirectoryTreeEvent) -> Task<DirectoryTreeEvent> {
         match msg {
             DirectoryTreeEvent::Toggled(path) => self.on_toggled(path),
-            DirectoryTreeEvent::Selected(path, is_dir) => {
-                self.on_selected(path, is_dir);
+            DirectoryTreeEvent::Selected(path, is_dir, mode) => {
+                self.on_selected(path, is_dir, mode);
                 Task::none()
             }
             DirectoryTreeEvent::Loaded(payload) => {
@@ -104,36 +105,101 @@ impl DirectoryTree {
         walker::scan(self.executor.clone(), path, self.generation, depth)
     }
 
-    /// Apply a selection. Selection is single-select.
+    /// Apply a selection request.
     ///
-    /// The widget keeps selection by path in
-    /// [`DirectoryTree::selected_path`], with each [`TreeNode::is_selected`]
-    /// flag acting as a view-layer cache. Both are kept in lockstep
-    /// here. A Selected message for a path that isn't currently in the
-    /// tree is a **no-op** — clobbering the user's real selection with
-    /// a stale click would be an unpleasant surprise.
+    /// Selection state is stored on the widget
+    /// ([`DirectoryTree::selected_paths`] + [`DirectoryTree::active_path`] +
+    /// [`DirectoryTree::anchor_path`]); the per-node `is_selected`
+    /// flags used by the view are synced at the end of every mutation.
     ///
-    /// Callers that *do* want to force-select an invisible path can
-    /// set `selected_path` directly (it is `pub(crate)` only — use
-    /// `__testing::force_select` from tests); the view's cache will
-    /// re-sync the next time the node becomes visible via a Loaded
-    /// payload or a filter flip.
-    fn on_selected(&mut self, path: std::path::PathBuf, _is_dir: bool) {
-        // Peek first: if the target isn't present we do nothing.
-        // `find_mut` is O(depth) thanks to prefix pruning in
-        // `TreeNode::find_mut`, so the extra walk is cheap.
+    /// Behaviour by mode:
+    ///
+    /// * [`SelectionMode::Replace`] — clear everything and select
+    ///   just `path`. Updates both anchor and active.
+    /// * [`SelectionMode::Toggle`] — add `path` to the set if absent,
+    ///   remove it otherwise. Updates anchor and active.
+    /// * [`SelectionMode::ExtendRange`] — replace the set with every
+    ///   visible row between the anchor and `path`. Does **not**
+    ///   move the anchor; only active is updated to `path`. Falls
+    ///   back to `Replace` semantics if no anchor is set or if
+    ///   either endpoint is not currently visible.
+    ///
+    /// A request for a `path` that isn't present in the tree at all
+    /// (stale click, filtered-out node, etc.) is a **no-op** — it
+    /// leaves existing selection untouched, to avoid clobbering the
+    /// user's real selection with a stale event.
+    fn on_selected(&mut self, path: std::path::PathBuf, _is_dir: bool, mode: SelectionMode) {
+        // Gate every mode on "target exists in the tree". This is
+        // the v0.2 guard that stopped stale clicks from clobbering
+        // selection; we keep it for v0.3 across every mode.
         if self.root.find_mut(&path).is_none() {
             return;
         }
-        // Update both the cursor and the per-node cache. Keeping
-        // `selected_path` as the source of truth means later
-        // rebuilds (filter flip, re-scan) can always reconstitute
-        // the `is_selected` flag without a full tree traversal.
-        self.selected_path = Some(path.clone());
-        self.root.clear_selection();
-        if let Some(node) = self.root.find_mut(&path) {
-            node.is_selected = true;
+
+        match mode {
+            SelectionMode::Replace => {
+                self.selected_paths.clear();
+                self.selected_paths.push(path.clone());
+                self.active_path = Some(path.clone());
+                self.anchor_path = Some(path);
+            }
+            SelectionMode::Toggle => {
+                if let Some(pos) = self.selected_paths.iter().position(|p| p == &path) {
+                    self.selected_paths.remove(pos);
+                } else {
+                    self.selected_paths.push(path.clone());
+                }
+                // Regardless of add-vs-remove, the anchor now tracks
+                // the most recently ctrl-clicked item — that's the
+                // pivot Windows Explorer and friends use for a
+                // subsequent Shift+click.
+                self.active_path = Some(path.clone());
+                self.anchor_path = Some(path);
+            }
+            SelectionMode::ExtendRange => {
+                let range = self.compute_visible_range(&path);
+                match range {
+                    Some(paths) => {
+                        self.selected_paths = paths;
+                        self.active_path = Some(path);
+                        // anchor intentionally unchanged
+                    }
+                    None => {
+                        // Fallback: behave as Replace. We don't move
+                        // the anchor here either — it wasn't usable,
+                        // so the user has not implicitly chosen a
+                        // new pivot, and "picking a new pivot
+                        // quietly" would be surprising.
+                        self.selected_paths.clear();
+                        self.selected_paths.push(path.clone());
+                        self.active_path = Some(path.clone());
+                        self.anchor_path = Some(path);
+                    }
+                }
+            }
         }
+
+        // Refresh per-node view flags.
+        self.sync_selection_flags();
+    }
+
+    /// Build the list of paths between the anchor and `target`
+    /// along the visible-rows order.
+    ///
+    /// Returns `None` when the operation can't be expressed as a
+    /// range — no anchor, or either endpoint not visible. In that
+    /// case the caller falls back to `Replace` semantics.
+    fn compute_visible_range(&self, target: &std::path::Path) -> Option<Vec<std::path::PathBuf>> {
+        let anchor = self.anchor_path.as_deref()?;
+        let rows = self.root.visible_rows();
+        let a_idx = rows.iter().position(|r| r.node.path == anchor)?;
+        let t_idx = rows.iter().position(|r| r.node.path == target)?;
+        let (lo, hi) = if a_idx <= t_idx {
+            (a_idx, t_idx)
+        } else {
+            (t_idx, a_idx)
+        };
+        Some(rows[lo..=hi].iter().map(|r| r.node.path.clone()).collect())
     }
 
     /// Merge the result of a completed scan into the tree.
@@ -193,15 +259,13 @@ impl DirectoryTree {
             self.cache.put(path, generation, entries.clone());
         }
 
-        // The newly-loaded children may contain (or *be*) the
-        // selected path — e.g. the user selected `/a/b/c`, we were
+        // The newly-loaded children may contain (or *be*) one of the
+        // selected paths — e.g. the user selected `/a/b/c`, we were
         // showing it via a cached parent, then a re-scan replaced
         // the cache entry with fresh nodes where `is_selected` is
-        // false. Re-sync from the path cursor so selection state
-        // is consistent with what `selected_path()` returns.
-        if let Some(selected) = self.selected_path.clone() {
-            self.sync_selection_flag(&selected);
-        }
+        // false. Re-sync from the authoritative set so view flags
+        // stay consistent with what `selected_paths()` returns.
+        self.sync_selection_flags();
     }
 }
 
@@ -292,8 +356,9 @@ mod tests {
     }
 
     #[test]
-    fn selection_is_single() {
-        // We build a tree by hand so we don't hit the filesystem.
+    fn selection_is_single_under_replace_mode() {
+        // Plain Replace-mode clicks keep single-select semantics:
+        // each new selection wipes the previous one.
         let mut tree = DirectoryTree::new(PathBuf::from("/a"));
         tree.root
             .children
@@ -303,15 +368,24 @@ mod tests {
             .push(TreeNode::new_root(PathBuf::from("/a/c")));
         tree.root.is_loaded = true;
 
-        let _ = tree.update(DirectoryTreeEvent::Selected(PathBuf::from("/a/b"), true));
+        let _ = tree.update(DirectoryTreeEvent::Selected(
+            PathBuf::from("/a/b"),
+            true,
+            SelectionMode::Replace,
+        ));
         assert!(
             tree.root
                 .find_mut(std::path::Path::new("/a/b"))
                 .unwrap()
                 .is_selected
         );
+        assert_eq!(tree.selected_paths.len(), 1);
 
-        let _ = tree.update(DirectoryTreeEvent::Selected(PathBuf::from("/a/c"), true));
+        let _ = tree.update(DirectoryTreeEvent::Selected(
+            PathBuf::from("/a/c"),
+            true,
+            SelectionMode::Replace,
+        ));
         assert!(
             !tree
                 .root
@@ -325,6 +399,7 @@ mod tests {
                 .unwrap()
                 .is_selected
         );
+        assert_eq!(tree.selected_paths.len(), 1);
     }
 
     #[test]
@@ -367,5 +442,170 @@ mod tests {
             tree.root.children.is_empty(),
             "stale result must be ignored"
         );
+    }
+
+    // -----------------------------------------------------------------
+    // Multi-select (v0.3) state-machine tests.
+    //
+    // These exercise the three modes directly against the state
+    // struct — no filesystem or iced runtime involved.
+    // -----------------------------------------------------------------
+
+    /// Build a small hand-made tree for selection tests: /r with
+    /// three expanded loaded siblings.
+    fn tree_with_three_siblings() -> DirectoryTree {
+        let mut tree = DirectoryTree::new(PathBuf::from("/r"));
+        tree.root.is_dir = true;
+        tree.root.is_expanded = true;
+        tree.root.is_loaded = true;
+        for name in &["a", "b", "c"] {
+            tree.root
+                .children
+                .push(TreeNode::new_root(PathBuf::from(format!("/r/{}", name))));
+        }
+        tree
+    }
+
+    fn sel(p: &str, mode: SelectionMode) -> DirectoryTreeEvent {
+        DirectoryTreeEvent::Selected(PathBuf::from(p), false, mode)
+    }
+
+    #[test]
+    fn replace_clears_previous_selection() {
+        let mut tree = tree_with_three_siblings();
+        let _ = tree.update(sel("/r/a", SelectionMode::Replace));
+        let _ = tree.update(sel("/r/b", SelectionMode::Replace));
+        assert_eq!(tree.selected_paths.len(), 1);
+        assert_eq!(tree.selected_paths[0], PathBuf::from("/r/b"));
+        assert_eq!(
+            tree.active_path.as_deref(),
+            Some(std::path::Path::new("/r/b"))
+        );
+        assert_eq!(
+            tree.anchor_path.as_deref(),
+            Some(std::path::Path::new("/r/b"))
+        );
+    }
+
+    #[test]
+    fn toggle_adds_then_removes() {
+        let mut tree = tree_with_three_siblings();
+        let _ = tree.update(sel("/r/a", SelectionMode::Replace));
+        let _ = tree.update(sel("/r/b", SelectionMode::Toggle));
+        let _ = tree.update(sel("/r/c", SelectionMode::Toggle));
+        assert_eq!(
+            tree.selected_paths.len(),
+            3,
+            "three paths after two toggles"
+        );
+
+        // Toggle /r/b again — should remove it.
+        let _ = tree.update(sel("/r/b", SelectionMode::Toggle));
+        assert_eq!(tree.selected_paths.len(), 2);
+        assert!(
+            !tree
+                .selected_paths
+                .iter()
+                .any(|p| p == std::path::Path::new("/r/b"))
+        );
+
+        // Anchor always follows the most recent toggled path
+        // regardless of add/remove.
+        assert_eq!(
+            tree.anchor_path.as_deref(),
+            Some(std::path::Path::new("/r/b"))
+        );
+    }
+
+    #[test]
+    fn toggle_updates_per_node_flags() {
+        let mut tree = tree_with_three_siblings();
+        let _ = tree.update(sel("/r/a", SelectionMode::Replace));
+        let _ = tree.update(sel("/r/b", SelectionMode::Toggle));
+        // Both /r/a and /r/b should have is_selected = true now.
+        assert!(
+            tree.root
+                .find_mut(std::path::Path::new("/r/a"))
+                .unwrap()
+                .is_selected
+        );
+        assert!(
+            tree.root
+                .find_mut(std::path::Path::new("/r/b"))
+                .unwrap()
+                .is_selected
+        );
+        // /r/c untouched.
+        assert!(
+            !tree
+                .root
+                .find_mut(std::path::Path::new("/r/c"))
+                .unwrap()
+                .is_selected
+        );
+    }
+
+    #[test]
+    fn extend_range_covers_visible_interval() {
+        let mut tree = tree_with_three_siblings();
+        // Anchor at /r/a via a plain Replace.
+        let _ = tree.update(sel("/r/a", SelectionMode::Replace));
+        // Shift-range to /r/c — should pick up /r, /r/a, /r/b, /r/c
+        // (in visible-row order).
+        let _ = tree.update(sel("/r/c", SelectionMode::ExtendRange));
+        // /r is visible as row 0 but the anchor was /r/a, so range
+        // runs from /r/a..=/r/c (3 rows).
+        assert_eq!(tree.selected_paths.len(), 3);
+        let names: Vec<_> = tree
+            .selected_paths
+            .iter()
+            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .collect();
+        assert_eq!(names, vec!["a", "b", "c"]);
+        // Anchor must not have moved.
+        assert_eq!(
+            tree.anchor_path.as_deref(),
+            Some(std::path::Path::new("/r/a"))
+        );
+    }
+
+    #[test]
+    fn extend_range_is_symmetric() {
+        let mut tree = tree_with_three_siblings();
+        // Anchor at /r/c, then extend *backwards* to /r/a.
+        let _ = tree.update(sel("/r/c", SelectionMode::Replace));
+        let _ = tree.update(sel("/r/a", SelectionMode::ExtendRange));
+        assert_eq!(tree.selected_paths.len(), 3);
+        // Anchor still on /r/c.
+        assert_eq!(
+            tree.anchor_path.as_deref(),
+            Some(std::path::Path::new("/r/c"))
+        );
+    }
+
+    #[test]
+    fn extend_range_without_anchor_falls_back_to_replace() {
+        // Fresh tree, no prior selection/anchor: ExtendRange acts
+        // as Replace onto the target.
+        let mut tree = tree_with_three_siblings();
+        let _ = tree.update(sel("/r/b", SelectionMode::ExtendRange));
+        assert_eq!(tree.selected_paths.len(), 1);
+        assert_eq!(tree.selected_paths[0], PathBuf::from("/r/b"));
+        // Fallback *does* pick a new anchor, so the user can then
+        // Shift+click somewhere else and get a meaningful range.
+        assert_eq!(
+            tree.anchor_path.as_deref(),
+            Some(std::path::Path::new("/r/b"))
+        );
+    }
+
+    #[test]
+    fn selection_on_stale_path_is_noop() {
+        let mut tree = tree_with_three_siblings();
+        let _ = tree.update(sel("/r/a", SelectionMode::Replace));
+        // Click on a path that is NOT in the tree — leaves state alone.
+        let _ = tree.update(sel("/completely/unrelated", SelectionMode::Replace));
+        assert_eq!(tree.selected_paths.len(), 1);
+        assert_eq!(tree.selected_paths[0], PathBuf::from("/r/a"));
     }
 }

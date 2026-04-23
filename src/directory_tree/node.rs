@@ -107,6 +107,39 @@ impl TreeNode {
     pub(crate) fn node_count(&self) -> usize {
         1 + self.children.iter().map(Self::node_count).sum::<usize>()
     }
+
+    /// Flat list of rows the view would render, in render order.
+    ///
+    /// Every ancestor-collapsed subtree is skipped. The returned
+    /// order is the same one the user sees on screen, so it is the
+    /// right order for keyboard navigation and Shift+click range
+    /// extension to reason about. Cost is O(visible nodes).
+    pub(crate) fn visible_rows(&self) -> Vec<VisibleRow<'_>> {
+        let mut out = Vec::new();
+        collect_visible(self, 0, &mut out);
+        out
+    }
+}
+
+/// A single visible row: the node, plus its indentation depth.
+///
+/// Crate-internal — used by the keyboard handler and by the
+/// multi-select range-extension path. Depth is cached on the row
+/// so callers don't have to re-walk from the root.
+#[derive(Debug)]
+pub(crate) struct VisibleRow<'a> {
+    pub node: &'a TreeNode,
+    #[allow(dead_code)]
+    pub depth: u32,
+}
+
+fn collect_visible<'a>(node: &'a TreeNode, depth: u32, out: &mut Vec<VisibleRow<'a>>) {
+    out.push(VisibleRow { node, depth });
+    if node.is_dir && node.is_expanded && node.is_loaded {
+        for child in &node.children {
+            collect_visible(child, depth + 1, out);
+        }
+    }
 }
 
 /// Lightweight, owned entry record produced by [`crate::walker`] and

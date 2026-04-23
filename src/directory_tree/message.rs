@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::node::LoadedEntry;
+use super::selection::SelectionMode;
 
 /// A message emitted by or consumed by the [`DirectoryTree`](crate::DirectoryTree) widget.
 ///
@@ -33,7 +34,7 @@ use super::node::LoadedEntry;
 /// fn update(&mut self, msg: MyMessage) -> Task<MyMessage> {
 ///     match msg {
 ///         MyMessage::Tree(event) => {
-///             if let DirectoryTreeEvent::Selected(path, _) = &event {
+///             if let DirectoryTreeEvent::Selected(path, _, _) = &event {
 ///                 self.preview(path);
 ///             }
 ///             self.tree.update(event).map(MyMessage::Tree)
@@ -53,11 +54,21 @@ pub enum DirectoryTreeEvent {
     /// internal cache.
     Toggled(PathBuf),
 
-    /// An item was selected by the user.
+    /// A row was selected.
     ///
-    /// The `bool` indicates whether the selected path is a directory
-    /// (`true`) or a file (`false`).
-    Selected(PathBuf, bool),
+    /// The `bool` indicates whether the path is a directory (`true`)
+    /// or a file (`false`). The [`SelectionMode`] controls how the
+    /// click composes with any existing selection — see its docs for
+    /// the full matrix.
+    ///
+    /// The built-in view always emits this with
+    /// [`SelectionMode::Replace`] because iced 0.14's button
+    /// callbacks cannot observe modifier keys at press time.
+    /// Applications that want multi-select track modifier state
+    /// themselves (see `examples/multi_select.rs`) and rewrite the
+    /// mode before forwarding the event — [`SelectionMode::from_modifiers`]
+    /// makes that a one-liner.
+    Selected(PathBuf, bool, SelectionMode),
 
     /// Internal: an asynchronous scan completed.
     ///

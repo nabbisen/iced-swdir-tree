@@ -1,5 +1,10 @@
 # iced-swdir-tree
 
+[![crates.io](https://img.shields.io/crates/v/iced-swdir-tree?label=rust)](https://crates.io/crates/iced-swdir-tree)
+[![Rust Documentation](https://docs.rs/iced-swdir-tree/badge.svg?version=latest)](https://docs.rs/iced-swdir-tree)
+[![Dependency Status](https://deps.rs/crate/iced-swdir-tree/latest/status.svg)](https://deps.rs/crate/iced-swdir-tree)
+[![License](https://img.shields.io/github/license/nabbisen/iced-swdir-tree)](https://github.com/nabbisen/iced-swdir-tree/blob/main/LICENSE)
+
 A reusable [iced](https://iced.rs) widget for displaying a directory tree with
 selection, lazy loading, filtering and asynchronous traversal.
 
@@ -9,9 +14,9 @@ expand one folder at a time.
 
 ## Features
 
-- **Single-select** with per-path persistence. Clicks emit a
-  `Selected(PathBuf, bool)` event; the cursor survives filter
-  changes and subtree reloads.
+- **Multi-select** with Shift/Ctrl-click and Shift-arrow range extension.
+  A per-path authoritative set survives filter changes and subtree
+  reloads; see [Multi-select](#multi-select).
 - **Lazy loading.** Only the root is created eagerly; child folders are
   scanned on first expand.
 - **Non-blocking.** Directory traversal runs on a worker thread through
@@ -24,7 +29,8 @@ expand one folder at a time.
   cache, so switching is instant — no re-scan. Expansion state and
   selection survive the swap.
 - **Keyboard navigation.** Arrow keys, `Home`/`End`, `Enter`,
-  `Space`, `←`/`→` — see [Keyboard navigation](#keyboard-navigation).
+  `Space`, `←`/`→`, plus Shift-modified variants for range
+  extension — see [Keyboard navigation](#keyboard-navigation).
 - **Stale-result handling.** Every scan carries a generation counter, so a
   collapse/re-expand cycle safely discards in-flight results from the
   cancelled round-trip.
@@ -43,7 +49,7 @@ expand one folder at a time.
 ```toml
 [dependencies]
 iced = "0.14"
-iced-swdir-tree = "0.2"
+iced-swdir-tree = "0.3"
 ```
 
 To use real lucide icons instead of the Unicode-symbol fallback:
@@ -51,7 +57,7 @@ To use real lucide icons instead of the Unicode-symbol fallback:
 ```toml
 [dependencies]
 iced = "0.14"
-iced-swdir-tree = { version = "0.2", features = ["icons"] }
+iced-swdir-tree = { version = "0.3", features = ["icons"] }
 ```
 
 The crate works without your application adding `swdir` directly — the
@@ -85,7 +91,9 @@ impl App {
         match message {
             Message::Tree(event) => {
                 // React to app-level side effects BEFORE forwarding.
-                if let DirectoryTreeEvent::Selected(path, is_dir) = &event {
+                // The third tuple element is the `SelectionMode`; match
+                // with `_` when you only care about the clicked path.
+                if let DirectoryTreeEvent::Selected(path, is_dir, _) = &event {
                     println!("selected {:?} (dir={})", path, is_dir);
                 }
                 self.tree.update(event).map(Message::Tree)
@@ -143,18 +151,73 @@ let tree = DirectoryTree::new(PathBuf::from("."))
 | `with_executor(e)` | Route blocking scans through a custom [`ScanExecutor`](#custom-scan-executor). |
 | `set_filter(f)` | Change the filter at runtime. Re-derives from cache; no I/O. |
 | `handle_key(k, m)` | Translate a keyboard event into a `DirectoryTreeEvent` — see [Keyboard navigation](#keyboard-navigation). |
-| `filter()`, `max_depth()`, `root_path()`, `selected_path()` | Read accessors. |
+| `filter()`, `max_depth()`, `root_path()` | Config accessors. |
+| `selected_path()` | Most recently touched path (`v0.2` single-select accessor). |
+| `selected_paths()` | The full selected set (`v0.3` multi-select). |
+| `anchor_path()` | Pivot for `SelectionMode::ExtendRange`. |
+| `is_selected(path)` | Membership check. |
 
 ## Events
 
 The widget emits `DirectoryTreeEvent`:
 
 - `Toggled(PathBuf)` — the user clicked the caret on a folder.
-- `Selected(PathBuf, bool)` — the user clicked a row; `bool` is
-  `true` for directories, `false` for files.
+- `Selected(PathBuf, bool, SelectionMode)` — the user selected a
+  row; `bool` is `true` for directories, `false` for files, and
+  the [`SelectionMode`](#multi-select) controls how the event
+  composes with any existing selection.
 - `Loaded(LoadPayload)` — internal; a pending scan completed.
   Parent applications route it straight back into `update()` without
   inspecting it.
+
+## Multi-select
+
+The widget keeps a full selected set, a "most-recent-action" active
+path, and an anchor path for Shift-range extension.
+[`SelectionMode`] — exported from the crate root — controls how each
+click composes:
+
+| Mode | Effect |
+|---|---|
+| `Replace` | Clear the set; the new path becomes the only selection. Updates both active and anchor. |
+| `Toggle`  | Add if absent, remove if present. Updates both active and anchor. |
+| `ExtendRange` | Replace the set with the visible rows between anchor and target, inclusive. Only active moves. Falls back to `Replace` if no anchor is set. |
+
+### View-level click behaviour
+
+iced 0.14's `button::on_press` cannot observe modifier keys, so the
+widget's built-in view always emits `SelectionMode::Replace` on
+click. Applications that want real multi-select track modifier
+state separately and rewrite the event in their own update handler:
+
+```rust,ignore
+use iced::keyboard::{self, Modifiers};
+use iced_swdir_tree::{DirectoryTreeEvent, SelectionMode};
+
+// In your update:
+Message::Tree(DirectoryTreeEvent::Selected(path, is_dir, _)) => {
+    let mode = SelectionMode::from_modifiers(self.modifiers);
+    let event = DirectoryTreeEvent::Selected(path, is_dir, mode);
+    self.tree.update(event).map(Message::Tree)
+}
+Message::ModifiersChanged(m) => {
+    self.modifiers = m;
+    Task::none()
+}
+
+// In your subscription:
+fn subscription(app: &App) -> iced::Subscription<Message> {
+    keyboard::listen().map(|event| match event {
+        keyboard::Event::ModifiersChanged(m) => Message::ModifiersChanged(m),
+        keyboard::Event::KeyPressed { key, modifiers, .. } =>
+            Message::TreeKey(key, modifiers),
+        _ => /* ... */,
+    })
+}
+```
+
+See [`examples/multi_select.rs`](examples/multi_select.rs) for a
+complete working app with a live selection-count status bar.
 
 ## Keyboard navigation
 
@@ -186,14 +249,18 @@ Message::TreeKey(key, mods) => {
 | Key | Behaviour |
 |---|---|
 | `↑` / `↓` | Move selection to previous / next visible row. |
+| `Shift` + `↑` / `↓` | Extend the selected range toward the previous / next row. |
 | `Home` / `End` | Jump to first / last visible row. |
+| `Shift` + `Home` / `End` | Extend the range to the first / last row. |
 | `Enter` | Toggle the selected directory (no-op on files). |
-| `Space` | Re-emit current selection as a `Selected` event. |
+| `Space` / `Ctrl` + `Space` | Toggle the active path in or out of the selected set. |
 | `←` | Collapse selected directory, or move to parent. |
 | `→` | Expand selected directory, or move to first child. |
 
 See [`examples/keyboard_nav.rs`](examples/keyboard_nav.rs) for a
-complete working app.
+single-select navigation demo and
+[`examples/multi_select.rs`](examples/multi_select.rs) for
+multi-select with Shift/Ctrl-click.
 
 ## Custom scan executor
 

@@ -15,7 +15,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use iced_swdir_tree::{DirectoryFilter, DirectoryTree, DirectoryTreeEvent};
+use iced_swdir_tree::{DirectoryFilter, DirectoryTree, DirectoryTreeEvent, SelectionMode};
 
 // ---------------------------------------------------------------------------
 // Test harness
@@ -93,13 +93,21 @@ fn filter_folders_only_hides_files_after_expand() {
     let note = td.path().join("note.txt");
 
     // `sub` is a folder — visible under FoldersOnly.
-    let _ = tree.update(DirectoryTreeEvent::Selected(sub.clone(), true));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        sub.clone(),
+        true,
+        SelectionMode::Replace,
+    ));
     assert_eq!(tree.selected_path(), Some(sub.as_path()));
 
     // `note.txt` is filtered out — selecting it must be a no-op:
     // the filtered node is not reachable, and the previous
     // selection stays put.
-    let _ = tree.update(DirectoryTreeEvent::Selected(note.clone(), false));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        note.clone(),
+        false,
+        SelectionMode::Replace,
+    ));
     assert_eq!(
         tree.selected_path(),
         Some(sub.as_path()),
@@ -120,12 +128,20 @@ fn filter_files_and_folders_hides_hidden_entries() {
     let visible = td.path().join("visible.txt");
     let hidden = td.path().join(".hidden");
 
-    let _ = tree.update(DirectoryTreeEvent::Selected(visible.clone(), false));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        visible.clone(),
+        false,
+        SelectionMode::Replace,
+    ));
     assert_eq!(tree.selected_path(), Some(visible.as_path()));
 
     // Stray selection on a filtered-out path is a no-op — the
     // previous selection stays intact.
-    let _ = tree.update(DirectoryTreeEvent::Selected(hidden.clone(), false));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        hidden.clone(),
+        false,
+        SelectionMode::Replace,
+    ));
     assert_eq!(
         tree.selected_path(),
         Some(visible.as_path()),
@@ -144,7 +160,11 @@ fn filter_all_includes_hidden_entries() {
     tree.__test_expand_blocking(td.path().to_path_buf());
 
     let hidden = td.path().join(".hidden");
-    let _ = tree.update(DirectoryTreeEvent::Selected(hidden.clone(), false));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        hidden.clone(),
+        false,
+        SelectionMode::Replace,
+    ));
     assert_eq!(tree.selected_path(), Some(hidden.as_path()));
 }
 
@@ -163,11 +183,19 @@ fn expand_populates_children() {
     tree.__test_expand_blocking(td.path().to_path_buf());
 
     let a = td.path().join("a");
-    let _ = tree.update(DirectoryTreeEvent::Selected(a.clone(), true));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        a.clone(),
+        true,
+        SelectionMode::Replace,
+    ));
     assert_eq!(tree.selected_path(), Some(a.as_path()));
 
     let c = td.path().join("c.txt");
-    let _ = tree.update(DirectoryTreeEvent::Selected(c.clone(), false));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        c.clone(),
+        false,
+        SelectionMode::Replace,
+    ));
     assert_eq!(tree.selected_path(), Some(c.as_path()));
 }
 
@@ -181,7 +209,11 @@ fn collapse_keeps_children_and_reexpand_is_instant() {
     tree.__test_expand_blocking(td.path().to_path_buf());
 
     let x = td.path().join("x");
-    let _ = tree.update(DirectoryTreeEvent::Selected(x.clone(), true));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        x.clone(),
+        true,
+        SelectionMode::Replace,
+    ));
     assert_eq!(tree.selected_path(), Some(x.as_path()));
 
     // Collapse the root via Toggled — should be instant, no Task
@@ -199,7 +231,11 @@ fn collapse_keeps_children_and_reexpand_is_instant() {
     );
 
     // And `x` is still selectable.
-    let _ = tree.update(DirectoryTreeEvent::Selected(x.clone(), true));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        x.clone(),
+        true,
+        SelectionMode::Replace,
+    ));
     assert_eq!(tree.selected_path(), Some(x.as_path()));
 }
 
@@ -219,10 +255,18 @@ fn selection_is_single_select() {
     let one = td.path().join("one.txt");
     let two = td.path().join("two.txt");
 
-    let _ = tree.update(DirectoryTreeEvent::Selected(one.clone(), false));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        one.clone(),
+        false,
+        SelectionMode::Replace,
+    ));
     assert_eq!(tree.selected_path(), Some(one.as_path()));
 
-    let _ = tree.update(DirectoryTreeEvent::Selected(two.clone(), false));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        two.clone(),
+        false,
+        SelectionMode::Replace,
+    ));
     assert_eq!(tree.selected_path(), Some(two.as_path()));
 }
 
@@ -245,7 +289,11 @@ fn set_filter_at_runtime_changes_visibility_without_rescan() {
     let visible = td.path().join("file.txt");
 
     // Select a visible-under-All entry and confirm selection.
-    let _ = tree.update(DirectoryTreeEvent::Selected(hidden.clone(), false));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        hidden.clone(),
+        false,
+        SelectionMode::Replace,
+    ));
     assert_eq!(tree.selected_path(), Some(hidden.as_path()));
 
     // Flip to a filter that hides dotfiles — the tree re-derives
@@ -257,7 +305,11 @@ fn set_filter_at_runtime_changes_visibility_without_rescan() {
     // visible tree. A stray selection click on an invisible path
     // is still a no-op (it leaves the cursor unchanged), but the
     // cursor value itself persists.
-    let _ = tree.update(DirectoryTreeEvent::Selected(hidden.clone(), false));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        hidden.clone(),
+        false,
+        SelectionMode::Replace,
+    ));
     assert_eq!(
         tree.selected_path(),
         Some(hidden.as_path()),
@@ -265,7 +317,11 @@ fn set_filter_at_runtime_changes_visibility_without_rescan() {
     );
 
     // Re-selecting a visible sibling replaces it — normal behaviour.
-    let _ = tree.update(DirectoryTreeEvent::Selected(visible.clone(), false));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        visible.clone(),
+        false,
+        SelectionMode::Replace,
+    ));
     assert_eq!(tree.selected_path(), Some(visible.as_path()));
 
     // Finally, flipping the filter back to AllIncludingHidden means
@@ -276,7 +332,11 @@ fn set_filter_at_runtime_changes_visibility_without_rescan() {
     assert_eq!(tree.selected_path(), Some(visible.as_path()));
     // And the per-node flag on visible should be set, confirming
     // `sync_selection_flag` ran.
-    let _ = tree.update(DirectoryTreeEvent::Selected(hidden.clone(), false));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        hidden.clone(),
+        false,
+        SelectionMode::Replace,
+    ));
     assert_eq!(
         tree.selected_path(),
         Some(hidden.as_path()),
@@ -299,7 +359,11 @@ fn nonexistent_root_does_not_crash() {
 
     // No selection should be reachable — the root has no children
     // and no file to select other than itself.
-    let _ = tree.update(DirectoryTreeEvent::Selected(bogus.join("anything"), false));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        bogus.join("anything"),
+        false,
+        SelectionMode::Replace,
+    ));
     assert_eq!(tree.selected_path(), None);
 }
 
@@ -341,7 +405,11 @@ fn permission_denied_surfaces_as_error_node() {
     // Selecting `sub` still works — the node exists, it's just
     // marked with an error. This is the "gray out the directory"
     // UI behaviour from the spec.
-    let _ = tree.update(DirectoryTreeEvent::Selected(sub.clone(), true));
+    let _ = tree.update(DirectoryTreeEvent::Selected(
+        sub.clone(),
+        true,
+        SelectionMode::Replace,
+    ));
     assert_eq!(tree.selected_path(), Some(sub.as_path()));
 
     // Restore permissions before the Drop so cleanup works.

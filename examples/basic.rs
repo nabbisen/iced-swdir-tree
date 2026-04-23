@@ -46,7 +46,7 @@ impl App {
             Message::Tree(event) => {
                 // Side-effect: remember the last selection so we can
                 // show it in the status bar.
-                if let DirectoryTreeEvent::Selected(p, _) = &event {
+                if let DirectoryTreeEvent::Selected(p, _, _) = &event {
                     self.last_selected = Some(p.clone());
                 }
                 self.tree.update(event).map(Message::Tree)

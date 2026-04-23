@@ -14,9 +14,11 @@
 //! | Key | Behaviour |
 //! |---|---|
 //! | `Up` / `Down` | Move the selection to the previous / next visible row. |
+//! | `Shift + Up` / `Shift + Down` | Extend the selected range toward the previous / next visible row. |
 //! | `Home` / `End` | Move the selection to the first / last visible row. |
+//! | `Shift + Home` / `Shift + End` | Extend the selected range to the first / last visible row. |
 //! | `Enter` | Toggle the currently-selected directory (no-op on files). |
-//! | `Space` | Re-emit the current selection as a `Selected` event (idempotent). |
+//! | `Space` / `Ctrl + Space` | Toggle the currently-active path in or out of the selected set. |
 //! | `Left` | If the selection is an expanded directory → collapse it. Otherwise move the selection to its parent. |
 //! | `Right` | If the selection is a collapsed directory → expand it. If it's an expanded directory with loaded children → move the selection to the first child. Otherwise no-op. |
 //!
@@ -31,7 +33,8 @@ use iced::keyboard::{self, Modifiers, key::Named};
 
 use super::DirectoryTree;
 use super::message::DirectoryTreeEvent;
-use super::node::TreeNode;
+use super::node::{TreeNode, VisibleRow};
+use super::selection::SelectionMode;
 
 impl DirectoryTree {
     /// Translate a key press into the event that keyboard navigation
@@ -45,7 +48,7 @@ impl DirectoryTree {
     /// This method is `&self` — it never mutates the tree. The
     /// returned event, if any, must be fed back through
     /// [`DirectoryTree::update`] like any other event so the
-    /// existing state-machine (selection cursor, cache, generation
+    /// existing state-machine (selection set, cache, generation
     /// counter) stays authoritative.
     ///
     /// # Example
@@ -54,9 +57,10 @@ impl DirectoryTree {
     /// use iced::keyboard;
     /// // ...in your iced subscription function:
     /// fn subscription(app: &App) -> iced::Subscription<Message> {
-    ///     keyboard::on_key_press(|key, mods| {
-    ///         // Translate only when the tree has focus in your UI.
-    ///         Some(Message::TreeKey(key, mods))
+    ///     keyboard::listen().map(|event| match event {
+    ///         keyboard::Event::KeyPressed { key, modifiers, .. } =>
+    ///             Message::TreeKey(key, modifiers),
+    ///         _ => Message::Noop,
     ///     })
     /// }
     ///
@@ -71,27 +75,39 @@ impl DirectoryTree {
     pub fn handle_key(
         &self,
         key: &keyboard::Key,
-        _modifiers: Modifiers,
+        modifiers: Modifiers,
     ) -> Option<DirectoryTreeEvent> {
         // Only `Named` keys are bound at the moment — we don't handle
         // character keys (typing "a" to jump to entries starting with
-        // "a" is a nice future feature, not a v0.2 one).
+        // "a" is a nice future feature, not a v0.3 one).
         let keyboard::Key::Named(named) = key else {
             return None;
+        };
+
+        // Navigation mode: Shift extends, everything else replaces.
+        let nav_mode = if modifiers.shift() {
+            SelectionMode::ExtendRange
+        } else {
+            SelectionMode::Replace
         };
 
         // Precompute the flat list of visible rows — the same
         // ordering the view uses. Most bindings need to know
         // "where am I in this list" and "what's next / previous".
-        let rows = visible_rows(&self.root);
+        let rows = self.root.visible_rows();
 
         match named {
-            Named::ArrowDown => self.move_selection(&rows, Direction::Next),
-            Named::ArrowUp => self.move_selection(&rows, Direction::Prev),
-            Named::Home => rows.first().map(select_event),
-            Named::End => rows.last().map(select_event),
+            Named::ArrowDown => self.move_selection(&rows, Direction::Next, nav_mode),
+            Named::ArrowUp => self.move_selection(&rows, Direction::Prev, nav_mode),
+            Named::Home => rows.first().map(|r| select_event(r, nav_mode)),
+            Named::End => rows.last().map(|r| select_event(r, nav_mode)),
             Named::Enter => self.enter_action(),
-            Named::Space => self.space_action(),
+            // Space and Ctrl+Space both toggle the active path in
+            // and out of the selected set — the standard
+            // tree-widget Space behaviour. This is a deliberate
+            // change from v0.2, where Space re-emitted the current
+            // selection as Replace.
+            Named::Space => self.toggle_active(),
             Named::ArrowLeft => self.left_action(&rows),
             Named::ArrowRight => self.right_action(),
             _ => None,
@@ -103,37 +119,39 @@ impl DirectoryTree {
         &self,
         rows: &[VisibleRow<'_>],
         dir: Direction,
+        mode: SelectionMode,
     ) -> Option<DirectoryTreeEvent> {
         if rows.is_empty() {
             return None;
         }
-        // No selection yet → jump to the first (ArrowDown) or last
-        // (ArrowUp) row. This matches the usual list-widget idiom.
-        let Some(current) = self.selected_path.as_deref() else {
+        // No active path yet → jump to the first (ArrowDown) or
+        // last (ArrowUp) row. This matches the usual list-widget
+        // idiom. The mode is carried through so Shift+arrow from a
+        // fresh tree still produces an ExtendRange event (which
+        // will fall back to Replace in update() given there's no
+        // anchor yet).
+        let Some(current) = self.active_path.as_deref() else {
             return match dir {
-                Direction::Next => rows.first().map(select_event),
-                Direction::Prev => rows.last().map(select_event),
+                Direction::Next => rows.first().map(|r| select_event(r, mode)),
+                Direction::Prev => rows.last().map(|r| select_event(r, mode)),
             };
         };
-        // Find the current row index; if the selection is not
-        // currently visible (filtered out / ancestor collapsed),
-        // fall back to first/last as above.
         let Some(idx) = rows.iter().position(|r| r.node.path == current) else {
             return match dir {
-                Direction::Next => rows.first().map(select_event),
-                Direction::Prev => rows.last().map(select_event),
+                Direction::Next => rows.first().map(|r| select_event(r, mode)),
+                Direction::Prev => rows.last().map(|r| select_event(r, mode)),
             };
         };
         let next_idx = match dir {
             Direction::Next => idx.saturating_add(1),
             Direction::Prev => idx.checked_sub(1)?,
         };
-        rows.get(next_idx).map(select_event)
+        rows.get(next_idx).map(|r| select_event(r, mode))
     }
 
-    /// Enter → toggle the currently-selected directory; no-op on files.
+    /// Enter → toggle the currently-active directory; no-op on files.
     fn enter_action(&self) -> Option<DirectoryTreeEvent> {
-        let path = self.selected_path.as_deref()?;
+        let path = self.active_path.as_deref()?;
         let node = find(&self.root, path)?;
         if node.is_dir {
             Some(DirectoryTreeEvent::Toggled(path.to_path_buf()))
@@ -142,14 +160,14 @@ impl DirectoryTree {
         }
     }
 
-    /// Space → re-emit the current selection as a Selected event.
-    /// Useful for "activate" without double-clicking.
-    fn space_action(&self) -> Option<DirectoryTreeEvent> {
-        let path = self.selected_path.as_deref()?;
+    /// Space → toggle the active path in/out of the selected set.
+    fn toggle_active(&self) -> Option<DirectoryTreeEvent> {
+        let path = self.active_path.as_deref()?;
         let node = find(&self.root, path)?;
         Some(DirectoryTreeEvent::Selected(
             path.to_path_buf(),
             node.is_dir,
+            SelectionMode::Toggle,
         ))
     }
 
@@ -157,27 +175,21 @@ impl DirectoryTree {
     /// * expanded directory → collapse it
     /// * otherwise → move selection to parent (if visible)
     fn left_action(&self, rows: &[VisibleRow<'_>]) -> Option<DirectoryTreeEvent> {
-        let path = self.selected_path.as_deref()?;
+        let path = self.active_path.as_deref()?;
         let node = find(&self.root, path)?;
         if node.is_dir && node.is_expanded {
             return Some(DirectoryTreeEvent::Toggled(path.to_path_buf()));
         }
-        // Find the row for the current path, then back up to the
-        // nearest visible ancestor (depth-1 of the current depth).
         let current_idx = rows.iter().position(|r| r.node.path == path)?;
         let current_depth = rows[current_idx].depth;
         if current_depth == 0 {
-            // Already at the root — nowhere further left to go.
             return None;
         }
-        // Walk backwards until we find a row with strictly smaller
-        // depth. That's the parent by construction, because the
-        // flat row list is produced in pre-order traversal.
         let parent = rows[..current_idx]
             .iter()
             .rev()
             .find(|r| r.depth < current_depth)?;
-        Some(select_event(parent))
+        Some(select_event(parent, SelectionMode::Replace))
     }
 
     /// Right:
@@ -185,7 +197,7 @@ impl DirectoryTree {
     /// * expanded directory with loaded children → move selection to first child
     /// * file → no-op
     fn right_action(&self) -> Option<DirectoryTreeEvent> {
-        let path = self.selected_path.as_deref()?;
+        let path = self.active_path.as_deref()?;
         let node = find(&self.root, path)?;
         if !node.is_dir {
             return None;
@@ -193,13 +205,11 @@ impl DirectoryTree {
         if !node.is_expanded {
             return Some(DirectoryTreeEvent::Toggled(path.to_path_buf()));
         }
-        // Expanded directory: pick first visible child. We only
-        // consider children that are actually in `node.children`
-        // (already filtered by the current display filter).
         let first = node.children.first()?;
         Some(DirectoryTreeEvent::Selected(
             first.path.clone(),
             first.is_dir,
+            SelectionMode::Replace,
         ))
     }
 }
@@ -208,45 +218,12 @@ impl DirectoryTree {
 // Helpers
 // ----------------------------------------------------------------
 
-/// A single entry in the flat-rows list, paired with its depth.
-///
-/// Depth is cached here rather than recomputed via `strip_prefix`
-/// because `visible_rows` builds the list anyway.
-struct VisibleRow<'a> {
-    node: &'a TreeNode,
-    depth: u32,
-}
-
 #[derive(Clone, Copy)]
 enum Direction {
     Next,
     Prev,
 }
 
-/// Return every visible row of the tree in the order the view
-/// renders them.
-///
-/// Used by every navigation binding that needs to reason about
-/// "previous" / "next" / "parent". The list is cheap to build —
-/// each visible node costs one entry — and costs nothing when no
-/// directories are expanded (it contains just the root).
-fn visible_rows(root: &TreeNode) -> Vec<VisibleRow<'_>> {
-    let mut out = Vec::new();
-    collect_visible(root, 0, &mut out);
-    out
-}
-
-fn collect_visible<'a>(node: &'a TreeNode, depth: u32, out: &mut Vec<VisibleRow<'a>>) {
-    out.push(VisibleRow { node, depth });
-    if node.is_dir && node.is_expanded && node.is_loaded {
-        for child in &node.children {
-            collect_visible(child, depth + 1, out);
-        }
-    }
-}
-
-/// O(depth) lookup by path. Mirrors `TreeNode::find_mut` but takes
-/// a `&self` tree so we can use it from the `&self` key handler.
 fn find<'a>(node: &'a TreeNode, target: &Path) -> Option<&'a TreeNode> {
     if node.path == target {
         return Some(node);
@@ -262,8 +239,8 @@ fn find<'a>(node: &'a TreeNode, target: &Path) -> Option<&'a TreeNode> {
     None
 }
 
-fn select_event(row: &VisibleRow<'_>) -> DirectoryTreeEvent {
-    DirectoryTreeEvent::Selected(row.node.path.clone(), row.node.is_dir)
+fn select_event(row: &VisibleRow<'_>, mode: SelectionMode) -> DirectoryTreeEvent {
+    DirectoryTreeEvent::Selected(row.node.path.clone(), row.node.is_dir, mode)
 }
 
 // ----------------------------------------------------------------
@@ -316,12 +293,25 @@ mod tests {
         iced::keyboard::Key::Named(key)
     }
 
+    /// Shorthand: set the tree's active + anchor + selected_paths to
+    /// `path` as if a Replace-click had just happened. Bypasses the
+    /// update() machinery for test brevity.
+    fn put_cursor_at(tree: &mut DirectoryTree, path: PathBuf) {
+        tree.active_path = Some(path.clone());
+        tree.anchor_path = Some(path.clone());
+        tree.selected_paths = vec![path.clone()];
+        tree.sync_selection_flags();
+    }
+
     #[test]
     fn arrow_down_from_no_selection_picks_first_row() {
         let tree = make_tree();
         let event = tree.handle_key(&press(Named::ArrowDown), Modifiers::default());
         match event {
-            Some(DirectoryTreeEvent::Selected(p, _)) => assert_eq!(p, PathBuf::from("/r")),
+            Some(DirectoryTreeEvent::Selected(p, _, mode)) => {
+                assert_eq!(p, PathBuf::from("/r"));
+                assert_eq!(mode, SelectionMode::Replace);
+            }
             other => panic!("expected Selected, got {other:?}"),
         }
     }
@@ -329,11 +319,27 @@ mod tests {
     #[test]
     fn arrow_down_moves_forward_in_visible_order() {
         let mut tree = make_tree();
-        tree.selected_path = Some(PathBuf::from("/r"));
-        tree.sync_selection_flag(&PathBuf::from("/r"));
+        put_cursor_at(&mut tree, PathBuf::from("/r"));
         let e = tree.handle_key(&press(Named::ArrowDown), Modifiers::default());
         match e {
-            Some(DirectoryTreeEvent::Selected(p, _)) => assert_eq!(p, PathBuf::from("/r/a")),
+            Some(DirectoryTreeEvent::Selected(p, _, mode)) => {
+                assert_eq!(p, PathBuf::from("/r/a"));
+                assert_eq!(mode, SelectionMode::Replace);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn shift_arrow_down_emits_extend_range() {
+        let mut tree = make_tree();
+        put_cursor_at(&mut tree, PathBuf::from("/r"));
+        let e = tree.handle_key(&press(Named::ArrowDown), Modifiers::SHIFT);
+        match e {
+            Some(DirectoryTreeEvent::Selected(p, _, mode)) => {
+                assert_eq!(p, PathBuf::from("/r/a"));
+                assert_eq!(mode, SelectionMode::ExtendRange);
+            }
             other => panic!("unexpected {other:?}"),
         }
     }
@@ -341,11 +347,10 @@ mod tests {
     #[test]
     fn arrow_up_moves_backward() {
         let mut tree = make_tree();
-        tree.selected_path = Some(PathBuf::from("/r/a/aa"));
-        tree.sync_selection_flag(&PathBuf::from("/r/a/aa"));
+        put_cursor_at(&mut tree, PathBuf::from("/r/a/aa"));
         let e = tree.handle_key(&press(Named::ArrowUp), Modifiers::default());
         match e {
-            Some(DirectoryTreeEvent::Selected(p, _)) => assert_eq!(p, PathBuf::from("/r/a")),
+            Some(DirectoryTreeEvent::Selected(p, _, _)) => assert_eq!(p, PathBuf::from("/r/a")),
             other => panic!("unexpected {other:?}"),
         }
     }
@@ -353,8 +358,7 @@ mod tests {
     #[test]
     fn arrow_up_at_top_returns_none() {
         let mut tree = make_tree();
-        tree.selected_path = Some(PathBuf::from("/r"));
-        tree.sync_selection_flag(&PathBuf::from("/r"));
+        put_cursor_at(&mut tree, PathBuf::from("/r"));
         assert!(
             tree.handle_key(&press(Named::ArrowUp), Modifiers::default())
                 .is_none()
@@ -364,8 +368,7 @@ mod tests {
     #[test]
     fn enter_on_folder_toggles() {
         let mut tree = make_tree();
-        tree.selected_path = Some(PathBuf::from("/r/a"));
-        tree.sync_selection_flag(&PathBuf::from("/r/a"));
+        put_cursor_at(&mut tree, PathBuf::from("/r/a"));
         match tree.handle_key(&press(Named::Enter), Modifiers::default()) {
             Some(DirectoryTreeEvent::Toggled(p)) => assert_eq!(p, PathBuf::from("/r/a")),
             other => panic!("unexpected {other:?}"),
@@ -375,8 +378,7 @@ mod tests {
     #[test]
     fn enter_on_file_is_noop() {
         let mut tree = make_tree();
-        tree.selected_path = Some(PathBuf::from("/r/b"));
-        tree.sync_selection_flag(&PathBuf::from("/r/b"));
+        put_cursor_at(&mut tree, PathBuf::from("/r/b"));
         assert!(
             tree.handle_key(&press(Named::Enter), Modifiers::default())
                 .is_none()
@@ -386,8 +388,7 @@ mod tests {
     #[test]
     fn left_on_expanded_folder_collapses() {
         let mut tree = make_tree();
-        tree.selected_path = Some(PathBuf::from("/r/a"));
-        tree.sync_selection_flag(&PathBuf::from("/r/a"));
+        put_cursor_at(&mut tree, PathBuf::from("/r/a"));
         match tree.handle_key(&press(Named::ArrowLeft), Modifiers::default()) {
             Some(DirectoryTreeEvent::Toggled(p)) => assert_eq!(p, PathBuf::from("/r/a")),
             other => panic!("unexpected {other:?}"),
@@ -397,10 +398,11 @@ mod tests {
     #[test]
     fn left_on_file_moves_to_parent() {
         let mut tree = make_tree();
-        tree.selected_path = Some(PathBuf::from("/r/a/aa"));
-        tree.sync_selection_flag(&PathBuf::from("/r/a/aa"));
+        put_cursor_at(&mut tree, PathBuf::from("/r/a/aa"));
         match tree.handle_key(&press(Named::ArrowLeft), Modifiers::default()) {
-            Some(DirectoryTreeEvent::Selected(p, _)) => assert_eq!(p, PathBuf::from("/r/a")),
+            Some(DirectoryTreeEvent::Selected(p, _, _)) => {
+                assert_eq!(p, PathBuf::from("/r/a"))
+            }
             other => panic!("unexpected {other:?}"),
         }
     }
@@ -408,10 +410,8 @@ mod tests {
     #[test]
     fn right_on_collapsed_folder_expands() {
         let mut tree = make_tree();
-        // Collapse /r/a so Right expands it.
         tree.root.children[0].is_expanded = false;
-        tree.selected_path = Some(PathBuf::from("/r/a"));
-        tree.sync_selection_flag(&PathBuf::from("/r/a"));
+        put_cursor_at(&mut tree, PathBuf::from("/r/a"));
         match tree.handle_key(&press(Named::ArrowRight), Modifiers::default()) {
             Some(DirectoryTreeEvent::Toggled(p)) => assert_eq!(p, PathBuf::from("/r/a")),
             other => panic!("unexpected {other:?}"),
@@ -421,10 +421,11 @@ mod tests {
     #[test]
     fn right_on_expanded_folder_moves_to_first_child() {
         let mut tree = make_tree();
-        tree.selected_path = Some(PathBuf::from("/r/a"));
-        tree.sync_selection_flag(&PathBuf::from("/r/a"));
+        put_cursor_at(&mut tree, PathBuf::from("/r/a"));
         match tree.handle_key(&press(Named::ArrowRight), Modifiers::default()) {
-            Some(DirectoryTreeEvent::Selected(p, _)) => assert_eq!(p, PathBuf::from("/r/a/aa")),
+            Some(DirectoryTreeEvent::Selected(p, _, _)) => {
+                assert_eq!(p, PathBuf::from("/r/a/aa"))
+            }
             other => panic!("unexpected {other:?}"),
         }
     }
@@ -432,27 +433,58 @@ mod tests {
     #[test]
     fn home_end_jump_to_boundaries() {
         let mut tree = make_tree();
-        tree.selected_path = Some(PathBuf::from("/r/a"));
-        tree.sync_selection_flag(&PathBuf::from("/r/a"));
+        put_cursor_at(&mut tree, PathBuf::from("/r/a"));
         match tree.handle_key(&press(Named::Home), Modifiers::default()) {
-            Some(DirectoryTreeEvent::Selected(p, _)) => assert_eq!(p, PathBuf::from("/r")),
+            Some(DirectoryTreeEvent::Selected(p, _, _)) => assert_eq!(p, PathBuf::from("/r")),
             other => panic!("{other:?}"),
         }
         match tree.handle_key(&press(Named::End), Modifiers::default()) {
-            Some(DirectoryTreeEvent::Selected(p, _)) => assert_eq!(p, PathBuf::from("/r/b")),
+            Some(DirectoryTreeEvent::Selected(p, _, _)) => assert_eq!(p, PathBuf::from("/r/b")),
             other => panic!("{other:?}"),
         }
     }
 
     #[test]
-    fn space_re_emits_selection() {
+    fn shift_home_end_emits_extend_range() {
         let mut tree = make_tree();
-        tree.selected_path = Some(PathBuf::from("/r/b"));
-        tree.sync_selection_flag(&PathBuf::from("/r/b"));
+        put_cursor_at(&mut tree, PathBuf::from("/r/a"));
+        match tree.handle_key(&press(Named::Home), Modifiers::SHIFT) {
+            Some(DirectoryTreeEvent::Selected(p, _, mode)) => {
+                assert_eq!(p, PathBuf::from("/r"));
+                assert_eq!(mode, SelectionMode::ExtendRange);
+            }
+            other => panic!("{other:?}"),
+        }
+        match tree.handle_key(&press(Named::End), Modifiers::SHIFT) {
+            Some(DirectoryTreeEvent::Selected(p, _, mode)) => {
+                assert_eq!(p, PathBuf::from("/r/b"));
+                assert_eq!(mode, SelectionMode::ExtendRange);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn space_toggles_active_path() {
+        let mut tree = make_tree();
+        put_cursor_at(&mut tree, PathBuf::from("/r/b"));
         match tree.handle_key(&press(Named::Space), Modifiers::default()) {
-            Some(DirectoryTreeEvent::Selected(p, is_dir)) => {
+            Some(DirectoryTreeEvent::Selected(p, is_dir, mode)) => {
                 assert_eq!(p, PathBuf::from("/r/b"));
                 assert!(!is_dir);
+                assert_eq!(mode, SelectionMode::Toggle);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn ctrl_space_also_toggles() {
+        let mut tree = make_tree();
+        put_cursor_at(&mut tree, PathBuf::from("/r/b"));
+        match tree.handle_key(&press(Named::Space), Modifiers::CTRL) {
+            Some(DirectoryTreeEvent::Selected(_, _, mode)) => {
+                assert_eq!(mode, SelectionMode::Toggle);
             }
             other => panic!("{other:?}"),
         }
