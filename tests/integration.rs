@@ -242,8 +242,9 @@ fn set_filter_at_runtime_changes_visibility_without_rescan() {
     tree.__test_expand_blocking(td.path().to_path_buf());
 
     let hidden = td.path().join(".hidden");
+    let visible = td.path().join("file.txt");
 
-    // Hidden visible under All.
+    // Select a visible-under-All entry and confirm selection.
     let _ = tree.update(DirectoryTreeEvent::Selected(hidden.clone(), false));
     assert_eq!(tree.selected_path(), Some(hidden.as_path()));
 
@@ -251,22 +252,36 @@ fn set_filter_at_runtime_changes_visibility_without_rescan() {
     // children from its cache, no filesystem I/O required.
     tree.set_filter(DirectoryFilter::FilesAndFolders);
 
-    // Re-selecting the hidden path must now find nothing (the node
-    // was removed from the tree), so the selection stays on whatever
-    // was there before (the rebuild clears selection too, which is
-    // acceptable behaviour — we only assert the hidden path is not
-    // reachable).
-    let _ = tree.update(DirectoryTreeEvent::Selected(hidden, false));
-    assert!(
-        tree.selected_path().is_none()
-            || tree.selected_path() != Some(td.path().join(".hidden").as_path()),
-        "hidden file must not be reachable after filter swap"
+    // **v0.2 change**: selection is per-path and survives filter
+    // changes, even when the selected node is filtered out of the
+    // visible tree. A stray selection click on an invisible path
+    // is still a no-op (it leaves the cursor unchanged), but the
+    // cursor value itself persists.
+    let _ = tree.update(DirectoryTreeEvent::Selected(hidden.clone(), false));
+    assert_eq!(
+        tree.selected_path(),
+        Some(hidden.as_path()),
+        "v0.2 keeps the selection cursor around through filter changes"
     );
 
-    // But a non-hidden file IS reachable.
-    let visible = td.path().join("file.txt");
+    // Re-selecting a visible sibling replaces it — normal behaviour.
     let _ = tree.update(DirectoryTreeEvent::Selected(visible.clone(), false));
     assert_eq!(tree.selected_path(), Some(visible.as_path()));
+
+    // Finally, flipping the filter back to AllIncludingHidden means
+    // the previously-hidden selection cursor becomes reachable again.
+    tree.set_filter(DirectoryFilter::AllIncludingHidden);
+    // The selection cursor is currently on `visible.txt`, not
+    // `.hidden`, because we moved it above. Confirm:
+    assert_eq!(tree.selected_path(), Some(visible.as_path()));
+    // And the per-node flag on visible should be set, confirming
+    // `sync_selection_flag` ran.
+    let _ = tree.update(DirectoryTreeEvent::Selected(hidden.clone(), false));
+    assert_eq!(
+        tree.selected_path(),
+        Some(hidden.as_path()),
+        "hidden re-selectable once AllIncludingHidden is active again"
+    );
 }
 
 // ---------------------------------------------------------------------------

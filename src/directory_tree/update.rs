@@ -101,15 +101,23 @@ impl DirectoryTree {
         // captured by value into the closure so a future re-expansion
         // can invalidate this in-flight result.
         self.generation = self.generation.wrapping_add(1);
-        walker::scan(path, self.generation, depth)
+        walker::scan(self.executor.clone(), path, self.generation, depth)
     }
 
-    /// Apply a selection. Selection is single-select, so we clear all
-    /// prior selections before setting the new one — but only if the
-    /// new path actually exists as a node. A Selected message for a
-    /// path that isn't in the tree (stale, filtered-out, etc.) is a
-    /// no-op, because clobbering the user's real selection with
-    /// nothing would be an unpleasant surprise.
+    /// Apply a selection. Selection is single-select.
+    ///
+    /// The widget keeps selection by path in
+    /// [`DirectoryTree::selected_path`], with each [`TreeNode::is_selected`]
+    /// flag acting as a view-layer cache. Both are kept in lockstep
+    /// here. A Selected message for a path that isn't currently in the
+    /// tree is a **no-op** — clobbering the user's real selection with
+    /// a stale click would be an unpleasant surprise.
+    ///
+    /// Callers that *do* want to force-select an invisible path can
+    /// set `selected_path` directly (it is `pub(crate)` only — use
+    /// `__testing::force_select` from tests); the view's cache will
+    /// re-sync the next time the node becomes visible via a Loaded
+    /// payload or a filter flip.
     fn on_selected(&mut self, path: std::path::PathBuf, _is_dir: bool) {
         // Peek first: if the target isn't present we do nothing.
         // `find_mut` is O(depth) thanks to prefix pruning in
@@ -117,6 +125,11 @@ impl DirectoryTree {
         if self.root.find_mut(&path).is_none() {
             return;
         }
+        // Update both the cursor and the per-node cache. Keeping
+        // `selected_path` as the source of truth means later
+        // rebuilds (filter flip, re-scan) can always reconstitute
+        // the `is_selected` flag without a full tree traversal.
+        self.selected_path = Some(path.clone());
         self.root.clear_selection();
         if let Some(node) = self.root.find_mut(&path) {
             node.is_selected = true;
@@ -178,6 +191,16 @@ impl DirectoryTree {
         // another scan.
         if let Ok(entries) = result.as_ref() {
             self.cache.put(path, generation, entries.clone());
+        }
+
+        // The newly-loaded children may contain (or *be*) the
+        // selected path — e.g. the user selected `/a/b/c`, we were
+        // showing it via a cached parent, then a re-scan replaced
+        // the cache entry with fresh nodes where `is_selected` is
+        // false. Re-sync from the path cursor so selection state
+        // is consistent with what `selected_path()` returns.
+        if let Some(selected) = self.selected_path.clone() {
+            self.sync_selection_flag(&selected);
         }
     }
 }

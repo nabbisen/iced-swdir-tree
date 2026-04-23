@@ -9,15 +9,22 @@ expand one folder at a time.
 
 ## Features
 
-- **Single-select.** Clicks emit a `Selected(PathBuf, bool)` event; the
-  `bool` indicates whether the target is a directory.
+- **Single-select** with per-path persistence. Clicks emit a
+  `Selected(PathBuf, bool)` event; the cursor survives filter
+  changes and subtree reloads.
 - **Lazy loading.** Only the root is created eagerly; child folders are
   scanned on first expand.
 - **Non-blocking.** Directory traversal runs on a worker thread through
   `iced::Task::perform`; the UI thread never stalls on disk I/O.
+  Plug in your own executor (`tokio`, `smol`, etc.) via
+  [`with_executor`](#custom-scan-executor) if you don't want the
+  per-expansion thread-spawn default.
 - **Three display filters.** `FoldersOnly`, `FilesAndFolders` (default),
-  `AllIncludingHidden`. Filter changes are applied from an in-memory cache,
-  so switching is instant — no re-scan.
+  `AllIncludingHidden`. Filter changes are applied from an in-memory
+  cache, so switching is instant — no re-scan. Expansion state and
+  selection survive the swap.
+- **Keyboard navigation.** Arrow keys, `Home`/`End`, `Enter`,
+  `Space`, `←`/`→` — see [Keyboard navigation](#keyboard-navigation).
 - **Stale-result handling.** Every scan carries a generation counter, so a
   collapse/re-expand cycle safely discards in-flight results from the
   cancelled round-trip.
@@ -36,7 +43,7 @@ expand one folder at a time.
 ```toml
 [dependencies]
 iced = "0.14"
-iced-swdir-tree = "0.1"
+iced-swdir-tree = "0.2"
 ```
 
 To use real lucide icons instead of the Unicode-symbol fallback:
@@ -44,7 +51,7 @@ To use real lucide icons instead of the Unicode-symbol fallback:
 ```toml
 [dependencies]
 iced = "0.14"
-iced-swdir-tree = { version = "0.1", features = ["icons"] }
+iced-swdir-tree = { version = "0.2", features = ["icons"] }
 ```
 
 The crate works without your application adding `swdir` directly — the
@@ -133,7 +140,9 @@ let tree = DirectoryTree::new(PathBuf::from("."))
 | `new(root)` | Build a tree rooted at `root`. Only the root is eagerly created. |
 | `with_filter(f)` | Builder form of `set_filter`. |
 | `with_max_depth(d)` | Refuse to load below depth `d` (0 = root children only). |
+| `with_executor(e)` | Route blocking scans through a custom [`ScanExecutor`](#custom-scan-executor). |
 | `set_filter(f)` | Change the filter at runtime. Re-derives from cache; no I/O. |
+| `handle_key(k, m)` | Translate a keyboard event into a `DirectoryTreeEvent` — see [Keyboard navigation](#keyboard-navigation). |
 | `filter()`, `max_depth()`, `root_path()`, `selected_path()` | Read accessors. |
 
 ## Events
@@ -146,6 +155,77 @@ The widget emits `DirectoryTreeEvent`:
 - `Loaded(LoadPayload)` — internal; a pending scan completed.
   Parent applications route it straight back into `update()` without
   inspecting it.
+
+## Keyboard navigation
+
+`DirectoryTree::handle_key(&Key, Modifiers) -> Option<DirectoryTreeEvent>`
+translates a key press into the right event. The widget stays
+focus-neutral — you decide when the tree has focus and subscribe
+to the key stream yourself:
+
+```rust,ignore
+use iced::keyboard;
+
+fn subscription(app: &App) -> iced::Subscription<Message> {
+    keyboard::listen().map(|event| match event {
+        keyboard::Event::KeyPressed { key, modifiers, .. } =>
+            Message::TreeKey(key, modifiers),
+        _ => Message::Noop,
+    })
+}
+
+// ...in update:
+Message::TreeKey(key, mods) => {
+    if let Some(event) = self.tree.handle_key(&key, mods) {
+        return self.tree.update(event).map(Message::Tree);
+    }
+    Task::none()
+}
+```
+
+| Key | Behaviour |
+|---|---|
+| `↑` / `↓` | Move selection to previous / next visible row. |
+| `Home` / `End` | Jump to first / last visible row. |
+| `Enter` | Toggle the selected directory (no-op on files). |
+| `Space` | Re-emit current selection as a `Selected` event. |
+| `←` | Collapse selected directory, or move to parent. |
+| `→` | Expand selected directory, or move to first child. |
+
+See [`examples/keyboard_nav.rs`](examples/keyboard_nav.rs) for a
+complete working app.
+
+## Custom scan executor
+
+By default the widget spawns one `std::thread` per folder expansion
+via `ThreadExecutor`. Apps that already run a blocking-task pool
+(tokio, smol, rayon, ...) can route through it by implementing
+`ScanExecutor`:
+
+```rust,ignore
+use std::sync::Arc;
+use std::future::Future;
+use std::pin::Pin;
+use iced_swdir_tree::{ScanExecutor, ScanJob, ScanFuture, DirectoryTree};
+
+struct TokioExecutor;
+
+impl ScanExecutor for TokioExecutor {
+    fn spawn_blocking(&self, job: ScanJob) -> ScanFuture {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(job)
+                .await
+                .expect("scan task panicked")
+        })
+    }
+}
+
+let tree = DirectoryTree::new(root)
+    .with_executor(Arc::new(TokioExecutor));
+```
+
+The default behaviour is unchanged if you don't call
+`with_executor` — existing v0.1 code keeps working as-is.
 
 ## Architecture
 

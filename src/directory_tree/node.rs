@@ -90,20 +90,6 @@ impl TreeNode {
         None
     }
 
-    /// Find the currently-selected node, if any. Selection is stored
-    /// on the node itself, so this is the canonical way to locate it.
-    pub(crate) fn find_selected(&self) -> Option<&TreeNode> {
-        if self.is_selected {
-            return Some(self);
-        }
-        for child in &self.children {
-            if let Some(hit) = child.find_selected() {
-                return Some(hit);
-            }
-        }
-        None
-    }
-
     /// Clear the selection flag on every node in this subtree.
     ///
     /// Selection is single-select; setting a new selection is a

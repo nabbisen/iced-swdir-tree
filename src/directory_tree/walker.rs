@@ -13,10 +13,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use iced::Task;
-use swdir::{DirEntry, ScanError, scan_dir};
+use swdir::DirEntry;
 
 #[cfg(test)]
 use super::config::DirectoryFilter;
+use super::executor::{ScanExecutor, run_scan};
 use super::message::{DirectoryTreeEvent, LoadPayload};
 use super::node::LoadedEntry;
 use crate::Error;
@@ -30,31 +31,30 @@ use crate::Error;
 /// meantime, and (b) place the new children under the right node
 /// without a full tree walk.
 ///
+/// The scan runs through `executor` — by default a fresh
+/// [`ThreadExecutor`](super::executor::ThreadExecutor), but apps that
+/// have a blocking-task pool of their own can swap in their own
+/// [`ScanExecutor`] implementation via
+/// [`DirectoryTree::with_executor`](crate::DirectoryTree::with_executor).
+///
 /// The filter is **not** applied here — the result is a
 /// raw-but-normalized listing, and the update layer runs the current
 /// filter over it before populating `TreeNode::children`. This lets
 /// [`DirectoryTree::set_filter`](crate::DirectoryTree) re-derive
 /// filtered children from the cache without re-scanning.
-pub(crate) fn scan(path: PathBuf, generation: u64, depth: u32) -> Task<DirectoryTreeEvent> {
-    // Clone the target path for the message-builder closure. We can't
-    // reuse the one moved into the worker thread, and we need it in
-    // both branches (Ok and Err) of the result.
+pub(crate) fn scan(
+    executor: Arc<dyn ScanExecutor>,
+    path: PathBuf,
+    generation: u64,
+    depth: u32,
+) -> Task<DirectoryTreeEvent> {
+    // Clone the target path for the message-builder closure. We need
+    // it in both branches (Ok and Err) of the result.
     let target = path.clone();
+    let fut = run_scan(&executor, path);
     Task::perform(
         async move {
-            // `thread::spawn(..).join()` keeps swdir synchronous but
-            // moves it off the iced executor thread. If the worker
-            // panics (rare — effectively OOM-only), surface it as an
-            // Io error rather than letting it propagate and tear
-            // the iced runtime down.
-            let raw = std::thread::spawn(move || scan_dir(&path))
-                .join()
-                .unwrap_or_else(|_| {
-                    Err(ScanError::Io {
-                        path: PathBuf::new(),
-                        source: std::io::Error::other("scan worker thread panicked"),
-                    })
-                });
+            let raw = fut.await;
             raw.as_ref()
                 .map(|entries| normalize_entries(entries))
                 .map_err(Error::from)
@@ -167,6 +167,7 @@ fn is_hidden(_path: &Path, entry: &DirEntry) -> bool {
 mod tests {
     use super::*;
     use std::fs;
+    use swdir::scan_dir;
 
     /// Minimal self-cleaning temp directory.
     struct TmpDir(PathBuf);

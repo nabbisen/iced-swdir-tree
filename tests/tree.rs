@@ -171,11 +171,45 @@ fn selection_lands_on_the_target_path() {
 }
 
 #[test]
-fn filter_change_drops_child_selection_as_documented() {
-    // v0.1 documented simplification: rebuild_from_cache discards
-    // per-node expansion/selection state.
+fn filter_change_preserves_selection_cursor() {
+    // **v0.2 behaviour**: selection is per-path and survives filter
+    // changes, even when the filter hides the selected node.
     let td = TmpDir::new("select-filter");
     fs::create_dir(td.path().join("keeps")).unwrap();
+    fs::write(td.path().join("file.txt"), b"").unwrap();
+
+    let mut tree =
+        DirectoryTree::new(td.path().to_path_buf()).with_filter(DirectoryFilter::FilesAndFolders);
+    iced_swdir_tree::__testing::scan_and_feed(&mut tree, td.path().to_path_buf());
+
+    // Select the file, then flip to a filter that hides files.
+    let target = td.path().join("file.txt");
+    let _ = tree.update(DirectoryTreeEvent::Selected(target.clone(), false));
+    assert_eq!(tree.selected_path(), Some(target.as_path()));
+
+    tree.set_filter(DirectoryFilter::FoldersOnly);
+
+    // The cursor persists even though the file is no longer visible.
+    assert_eq!(
+        tree.selected_path(),
+        Some(target.as_path()),
+        "v0.2: selection cursor survives filter change"
+    );
+
+    // Flipping the filter back to FilesAndFolders and re-selecting
+    // the path confirms it is reachable again.
+    tree.set_filter(DirectoryFilter::FilesAndFolders);
+    assert_eq!(tree.selected_path(), Some(target.as_path()));
+}
+
+#[test]
+fn filter_change_preserves_directory_selection_when_still_visible() {
+    // Companion to the previous test: if the selected node is
+    // *still* visible under the new filter, the per-node
+    // is_selected flag is re-synced to match.
+    let td = TmpDir::new("select-folder-filter");
+    fs::create_dir(td.path().join("keeps")).unwrap();
+    fs::write(td.path().join("file.txt"), b"").unwrap();
 
     let mut tree =
         DirectoryTree::new(td.path().to_path_buf()).with_filter(DirectoryFilter::FilesAndFolders);
@@ -186,7 +220,13 @@ fn filter_change_drops_child_selection_as_documented() {
     assert_eq!(tree.selected_path(), Some(target.as_path()));
 
     tree.set_filter(DirectoryFilter::FoldersOnly);
-    assert_eq!(tree.selected_path(), None);
+    assert_eq!(tree.selected_path(), Some(target.as_path()));
+    // And the per-node cache is re-marked on the freshly built node.
+    let node = find_in_tree(&tree, &target).expect("folder must still be in the tree");
+    assert!(
+        node.is_selected,
+        "per-node flag must be re-synced after rebuild"
+    );
 }
 
 #[test]
@@ -303,4 +343,103 @@ fn find_in_tree<'a>(tree: &'a DirectoryTree, path: &Path) -> Option<&'a TreeNode
         node.children.iter().find_map(|c| walk(c, path))
     }
     walk(iced_swdir_tree::__testing::root(tree), path)
+}
+
+// ---------------------------------------------------------------------------
+// v0.2 tests: expansion state survives filter change
+// ---------------------------------------------------------------------------
+
+#[test]
+fn filter_change_preserves_expanded_subtree() {
+    // User has expanded /root/sub and loaded its children; flipping
+    // the filter must not collapse /root/sub or re-trigger its scan.
+    let td = TmpDir::new("expanded-preserve");
+    fs::create_dir_all(td.path().join("sub/inner")).unwrap();
+    fs::write(td.path().join("sub/inner/leaf.txt"), b"").unwrap();
+    fs::write(td.path().join(".hidden"), b"").unwrap();
+
+    let mut tree =
+        DirectoryTree::new(td.path().to_path_buf()).with_filter(DirectoryFilter::FilesAndFolders);
+    iced_swdir_tree::__testing::scan_and_feed(&mut tree, td.path().to_path_buf());
+    // Expand the subdirectory too so there's deeper state to preserve.
+    iced_swdir_tree::__testing::scan_and_feed(&mut tree, td.path().join("sub"));
+
+    // Pre-condition: sub is expanded and loaded.
+    let sub_before = find_in_tree(&tree, &td.path().join("sub")).expect("sub exists");
+    assert!(sub_before.is_expanded);
+    assert!(sub_before.is_loaded);
+    assert!(!sub_before.children.is_empty());
+
+    // Flip the filter. No I/O; tree re-derives from cache.
+    tree.set_filter(DirectoryFilter::AllIncludingHidden);
+
+    // Post-condition: sub is still expanded, still loaded, still
+    // has its inner child. This is the v0.2 "rebuild_from_cache
+    // preserves subtree" contract.
+    let sub_after =
+        find_in_tree(&tree, &td.path().join("sub")).expect("sub must still be in the tree");
+    assert!(
+        sub_after.is_expanded,
+        "expansion must survive filter change"
+    );
+    assert!(
+        sub_after.is_loaded,
+        "loaded flag must survive filter change"
+    );
+    assert!(
+        !sub_after.children.is_empty(),
+        "deeper subtree must survive filter change"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// v0.2 tests: custom executor integration
+// ---------------------------------------------------------------------------
+
+/// A test-only executor that counts how many scans it ran.
+///
+/// Demonstrates the `ScanExecutor` trait is object-safe and pluggable,
+/// and exercises the trait-method signature end-to-end.
+#[derive(Default)]
+struct CountingExecutor {
+    count: std::sync::atomic::AtomicUsize,
+}
+
+impl iced_swdir_tree::ScanExecutor for CountingExecutor {
+    fn spawn_blocking(&self, job: iced_swdir_tree::ScanJob) -> iced_swdir_tree::ScanFuture {
+        self.count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // Delegate to the default ThreadExecutor to actually run the
+        // work — we only want to observe here, not reimplement.
+        iced_swdir_tree::ThreadExecutor.spawn_blocking(job)
+    }
+}
+
+#[test]
+fn with_executor_accepts_a_custom_impl() {
+    // End-to-end check: constructing a tree with a custom executor
+    // compiles, and reading back the builder result exposes the
+    // expected API surface. We don't spin up an iced runtime here —
+    // that's covered by the actual `iced::Task::perform` path in the
+    // manual keyboard_nav example — but we do confirm the builder
+    // accepts any `Arc<dyn ScanExecutor>`.
+    use std::sync::Arc;
+
+    let exec: Arc<dyn iced_swdir_tree::ScanExecutor> = Arc::new(CountingExecutor::default());
+    let _tree = DirectoryTree::new(PathBuf::from("/tmp"))
+        .with_executor(exec.clone())
+        .with_filter(DirectoryFilter::FilesAndFolders);
+    // The trait-object constructor worked — that's the main assertion.
+    // (We cannot easily drive the async scan off-runtime here.)
+}
+
+#[test]
+fn default_executor_is_thread_executor_and_builds_cleanly() {
+    // Smoke-test that constructing a DirectoryTree without calling
+    // `with_executor` gives us the ThreadExecutor default. If this
+    // ever regresses, the following apps-built-on-v0.1 line would
+    // need user intervention.
+    let _tree = DirectoryTree::new(PathBuf::from("/tmp"));
+    // Nothing to assert on the executor directly (it's `pub(crate)`
+    // by intent), but the tree builds without a type inference hint
+    // for the executor, which is what v0.1 users rely on.
 }

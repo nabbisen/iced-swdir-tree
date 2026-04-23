@@ -68,6 +68,7 @@ pub use crate::directory_tree::{
     DirectoryTree,
     config::{DirectoryFilter, TreeConfig},
     error::Error,
+    executor::{ScanExecutor, ScanFuture, ScanJob, ThreadExecutor},
     message::{DirectoryTreeEvent, LoadPayload},
     node::TreeNode,
 };

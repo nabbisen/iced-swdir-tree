@@ -1,6 +1,6 @@
 [package]
 name = "iced-swdir-tree"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "iced widget for file tree powered by swdir, supporting selection, lazy loading and filtering."
 authors = ["nabbisen <nabbisen@scqr.net>"]
@@ -17,7 +17,7 @@ icons = ["dep:lucide-icons"]
 
 [dependencies]
 iced = "0.14"
-swdir = "0.9"
+swdir = "0.10"
 
 [dependencies.lucide-icons]
 version = "1"
@@ -35,6 +35,10 @@ path = "examples/basic.rs"
 name = "with_icons"
 path = "examples/with_icons.rs"
 required-features = ["icons"]
+
+[[example]]
+name = "keyboard_nav"
+path = "examples/keyboard_nav.rs"
 
 [package.metadata.docs.rs]
 all-features = true

@@ -1,10 +1,10 @@
 # Roadmap
 
-## v0.2 — v0.3
+## v0.2 — v0.3 — **shipped in 0.2.0**
 
-- Per-path selection tracking so filter changes preserve selection.
-- Keyboard navigation (arrow keys, enter to toggle, space to select).
-- Drive the scan through a pluggable async runtime shim so applications
+- ✅ Per-path selection tracking so filter changes preserve selection.
+- ✅ Keyboard navigation (arrow keys, enter to toggle, space to select).
+- ✅ Drive the scan through a pluggable async runtime shim so applications
   using `tokio` rather than smol don't pay for a thread-spawn per
   expansion.
 
