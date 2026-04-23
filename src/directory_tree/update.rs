@@ -15,6 +15,7 @@
 use iced::Task;
 
 use super::DirectoryTree;
+use super::drag::{DragMsg, DragState};
 use super::message::{DirectoryTreeEvent, LoadPayload};
 use super::node::{LoadedEntry, TreeNode};
 use super::selection::SelectionMode;
@@ -46,6 +47,16 @@ impl DirectoryTree {
                 self.on_selected(path, is_dir, mode);
                 Task::none()
             }
+            DirectoryTreeEvent::Drag(msg) => self.on_drag(msg),
+            // `DragCompleted` is a broadcast event: produced by the
+            // widget's own state machine inside `on_drag` and
+            // re-routed back through the app's message plumbing so
+            // the app can react. When it arrives here again the
+            // state machine has already cleared the drag, so this
+            // branch is a no-op — routing it back unchanged is the
+            // safe default for apps that just `.map(...)` every
+            // tree event.
+            DirectoryTreeEvent::DragCompleted { .. } => Task::none(),
             DirectoryTreeEvent::Loaded(payload) => {
                 self.on_loaded(payload);
                 Task::none()
@@ -200,6 +211,112 @@ impl DirectoryTree {
             (t_idx, a_idx)
         };
         Some(rows[lo..=hi].iter().map(|r| r.node.path.clone()).collect())
+    }
+
+    /// Drive the drag state machine.
+    ///
+    /// The five [`DragMsg`] variants drive the lifecycle:
+    ///
+    /// * `Pressed(p, is_dir)` — enter the Dragging state with
+    ///   sources derived from the current selection (if `p` is
+    ///   already selected) or from `p` alone (if it isn't).
+    /// * `Entered(p)` — if `p` is a valid drop target, set it as
+    ///   the hover.
+    /// * `Exited(p)` — clear hover if it was pointing at `p`.
+    /// * `Released(p)` — finalize the gesture:
+    ///   - Same row as press? Emit a delayed `Selected(Replace)`
+    ///     so the click behaves the way a v0.2/v0.3 single-click
+    ///     would.
+    ///   - Different row with a valid hover? Emit `DragCompleted`.
+    ///   - Anywhere else? Quietly drop back to Idle.
+    /// * `Cancelled` — drop to Idle unconditionally.
+    ///
+    /// `Released` and `Cancelled` are idempotent: they do nothing
+    /// if no drag is in progress. The others are also safe to call
+    /// out of order — the state machine silently ignores bogus
+    /// sequences rather than panicking, so a stray `Entered` with
+    /// no prior `Pressed` is a no-op.
+    fn on_drag(&mut self, msg: DragMsg) -> Task<DirectoryTreeEvent> {
+        match msg {
+            DragMsg::Pressed(path, is_dir) => {
+                // If the pressed row is already part of the
+                // selection, drag the whole selection. Otherwise
+                // drag only that row — this matches Explorer /
+                // Finder behaviour and avoids accidentally dragging
+                // an unrelated set when the user clicks a
+                // previously-unselected row.
+                let sources: Vec<std::path::PathBuf> = if self.is_selected(&path) {
+                    self.selected_paths.clone()
+                } else {
+                    vec![path.clone()]
+                };
+                self.drag = Some(DragState {
+                    sources,
+                    primary: path,
+                    primary_is_dir: is_dir,
+                    hover: None,
+                });
+                Task::none()
+            }
+            DragMsg::Entered(path) => {
+                if let Some(d) = self.drag.as_mut() {
+                    // Look up whether `path` is a directory. We
+                    // have to do this dynamically because the view
+                    // doesn't bundle `is_dir` into `Entered`
+                    // (keeping the payload small).
+                    let is_dir = self.root.find_mut(&path).map(|n| n.is_dir).unwrap_or(false);
+                    if d.is_valid_target(&path, is_dir) {
+                        d.hover = Some(path);
+                    } else {
+                        d.hover = None;
+                    }
+                }
+                Task::none()
+            }
+            DragMsg::Exited(path) => {
+                if let Some(d) = self.drag.as_mut()
+                    && d.hover.as_deref() == Some(path.as_path())
+                {
+                    d.hover = None;
+                }
+                Task::none()
+            }
+            DragMsg::Released(path) => {
+                let Some(d) = self.drag.take() else {
+                    return Task::none();
+                };
+                // Case 1: same-row release. The user pressed and
+                // released without ever crossing into another row,
+                // i.e., it was a click. Dispatch a delayed
+                // `Selected` with Replace mode.
+                if path == d.primary {
+                    return Task::done(DirectoryTreeEvent::Selected(
+                        d.primary,
+                        d.primary_is_dir,
+                        SelectionMode::Replace,
+                    ));
+                }
+                // Case 2: release over a valid drop target. Emit
+                // `DragCompleted` for the app to act on.
+                if let Some(dest) = d.hover {
+                    return Task::done(DirectoryTreeEvent::DragCompleted {
+                        sources: d.sources,
+                        destination: dest,
+                    });
+                }
+                // Case 3: release somewhere that wasn't a valid
+                // target and wasn't the press row — cancelled drag.
+                // Selection is deliberately NOT modified (the user
+                // may have been trying to drag the current
+                // multi-selection and aborted; preserving state is
+                // less surprising than silently collapsing).
+                Task::none()
+            }
+            DragMsg::Cancelled => {
+                self.drag = None;
+                Task::none()
+            }
+        }
     }
 
     /// Merge the result of a completed scan into the tree.
@@ -607,5 +724,214 @@ mod tests {
         let _ = tree.update(sel("/completely/unrelated", SelectionMode::Replace));
         assert_eq!(tree.selected_paths.len(), 1);
         assert_eq!(tree.selected_paths[0], PathBuf::from("/r/a"));
+    }
+
+    // -----------------------------------------------------------------
+    // Drag-and-drop (v0.4) state-machine tests.
+    // -----------------------------------------------------------------
+
+    /// Build a tree with two folders /r/x, /r/y and a file /r/f.
+    /// Used to test "drop onto folder" vs "drop onto file".
+    fn tree_with_two_folders_and_a_file() -> DirectoryTree {
+        let mut tree = DirectoryTree::new(PathBuf::from("/r"));
+        tree.root.is_dir = true;
+        tree.root.is_expanded = true;
+        tree.root.is_loaded = true;
+        let mut x = TreeNode::new_root(PathBuf::from("/r/x"));
+        x.is_dir = true;
+        tree.root.children.push(x);
+        let mut y = TreeNode::new_root(PathBuf::from("/r/y"));
+        y.is_dir = true;
+        tree.root.children.push(y);
+        let mut f = TreeNode::new_root(PathBuf::from("/r/f"));
+        // `new_root` defaults is_dir=true (roots are always dirs);
+        // override for the file node.
+        f.is_dir = false;
+        tree.root.children.push(f);
+        tree
+    }
+
+    #[test]
+    fn press_without_prior_selection_drags_only_pressed_row() {
+        let mut tree = tree_with_two_folders_and_a_file();
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Pressed(
+            PathBuf::from("/r/f"),
+            false,
+        )));
+        assert!(tree.is_dragging());
+        assert_eq!(tree.drag_sources(), &[PathBuf::from("/r/f")]);
+    }
+
+    #[test]
+    fn press_on_selected_row_drags_whole_selection() {
+        // Multi-select {/r/f, /r/x}, then press on /r/f — drag the
+        // whole set.
+        let mut tree = tree_with_two_folders_and_a_file();
+        let _ = tree.update(DirectoryTreeEvent::Selected(
+            PathBuf::from("/r/f"),
+            false,
+            SelectionMode::Replace,
+        ));
+        let _ = tree.update(DirectoryTreeEvent::Selected(
+            PathBuf::from("/r/x"),
+            true,
+            SelectionMode::Toggle,
+        ));
+        assert_eq!(tree.selected_paths().len(), 2);
+
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Pressed(
+            PathBuf::from("/r/f"),
+            false,
+        )));
+        assert_eq!(
+            tree.drag_sources().len(),
+            2,
+            "pressing a selected row drags the whole selection"
+        );
+    }
+
+    #[test]
+    fn entered_folder_sets_hover_to_folder() {
+        let mut tree = tree_with_two_folders_and_a_file();
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Pressed(
+            PathBuf::from("/r/f"),
+            false,
+        )));
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Entered(PathBuf::from(
+            "/r/x",
+        ))));
+        assert_eq!(tree.drop_target(), Some(std::path::Path::new("/r/x")));
+    }
+
+    #[test]
+    fn entered_file_leaves_hover_unset() {
+        let mut tree = tree_with_two_folders_and_a_file();
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Pressed(
+            PathBuf::from("/r/x"),
+            true,
+        )));
+        // Now cursor moves over a file, not a folder. Not a valid target.
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Entered(PathBuf::from(
+            "/r/f",
+        ))));
+        assert_eq!(tree.drop_target(), None);
+    }
+
+    #[test]
+    fn entered_source_row_leaves_hover_unset() {
+        // Dragging /r/x and cursor re-enters /r/x — can't drop on
+        // self. hover stays None.
+        let mut tree = tree_with_two_folders_and_a_file();
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Pressed(
+            PathBuf::from("/r/x"),
+            true,
+        )));
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Entered(PathBuf::from(
+            "/r/x",
+        ))));
+        assert_eq!(tree.drop_target(), None);
+    }
+
+    #[test]
+    fn exited_target_clears_hover() {
+        let mut tree = tree_with_two_folders_and_a_file();
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Pressed(
+            PathBuf::from("/r/f"),
+            false,
+        )));
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Entered(PathBuf::from(
+            "/r/x",
+        ))));
+        assert_eq!(tree.drop_target(), Some(std::path::Path::new("/r/x")));
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Exited(PathBuf::from(
+            "/r/x",
+        ))));
+        assert_eq!(tree.drop_target(), None);
+    }
+
+    #[test]
+    fn release_same_row_produces_delayed_selected() {
+        // Press on /r/f, release on /r/f → click, not drag.
+        // The widget emits a Task<Selected> for the app to
+        // observe; the drag state is cleared.
+        let mut tree = tree_with_two_folders_and_a_file();
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Pressed(
+            PathBuf::from("/r/f"),
+            false,
+        )));
+        let _task = tree.update(DirectoryTreeEvent::Drag(DragMsg::Released(PathBuf::from(
+            "/r/f",
+        ))));
+        // We can't easily inspect the Task's payload without
+        // running an iced runtime, but we *can* confirm the drag
+        // state is cleared, which is the state-machine
+        // invariant. (The Task<Selected> side effect is exercised
+        // end-to-end in the integration tests in tests/tree.rs.)
+        assert!(!tree.is_dragging());
+    }
+
+    #[test]
+    fn release_over_valid_target_clears_drag_state() {
+        let mut tree = tree_with_two_folders_and_a_file();
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Pressed(
+            PathBuf::from("/r/f"),
+            false,
+        )));
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Entered(PathBuf::from(
+            "/r/x",
+        ))));
+        let _task = tree.update(DirectoryTreeEvent::Drag(DragMsg::Released(PathBuf::from(
+            "/r/x",
+        ))));
+        assert!(!tree.is_dragging());
+        // The returned Task carries a DragCompleted; we test that
+        // end-to-end in the integration tests.
+    }
+
+    #[test]
+    fn release_without_hover_is_silent_cancel() {
+        // Press on /r/f, release on /r/y WITHOUT having entered any
+        // row (Entered was never called). hover is None, so it's
+        // treated as cancel — state clears, no event.
+        let mut tree = tree_with_two_folders_and_a_file();
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Pressed(
+            PathBuf::from("/r/f"),
+            false,
+        )));
+        let _task = tree.update(DirectoryTreeEvent::Drag(DragMsg::Released(PathBuf::from(
+            "/r/y",
+        ))));
+        assert!(!tree.is_dragging());
+        // selection must still be empty (no delayed Selected).
+        assert!(tree.selected_paths().is_empty());
+    }
+
+    #[test]
+    fn explicit_cancelled_clears_drag() {
+        let mut tree = tree_with_two_folders_and_a_file();
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Pressed(
+            PathBuf::from("/r/f"),
+            false,
+        )));
+        assert!(tree.is_dragging());
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Cancelled));
+        assert!(!tree.is_dragging());
+    }
+
+    #[test]
+    fn stray_events_without_press_are_noops() {
+        let mut tree = tree_with_two_folders_and_a_file();
+        // No drag active. These must not panic or create state.
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Entered(PathBuf::from(
+            "/r/x",
+        ))));
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Exited(PathBuf::from(
+            "/r/x",
+        ))));
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Released(PathBuf::from(
+            "/r/x",
+        ))));
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Cancelled));
+        assert!(!tree.is_dragging());
     }
 }

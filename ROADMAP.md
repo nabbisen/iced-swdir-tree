@@ -20,16 +20,16 @@ See [CHANGELOG](CHANGELOG.md#030--2026-04-23). Adds
 accessors on `DirectoryTree`, Shift-arrow and Space-toggle
 keyboard bindings, and the `multi_select` example.
 
-## Remaining for v1.0
+### v0.4.0 — Drag-and-drop between nodes ✅
+See [CHANGELOG](CHANGELOG.md#040--2026-04-24). Adds the `Drag`
+and `DragCompleted` event variants, a `DragMsg` state-machine
+enum, drop-target highlighting in the built-in view, multi-item
+drag that preserves the current selection during the gesture,
+deferred-selection so clicks on multi-selected rows don't collapse
+the set, an Escape-to-cancel keybind, and the `drag_drop` example
+that performs `fs::rename` on drop.
 
-### v0.4.0 — Drag-and-drop between nodes
-Let the user drag one or more selected paths onto another folder in
-the same tree. Requires an `iced::event::listen` hook for mouse-drag
-state and a drop-target overlay on folder rows. Surface as
-`DirectoryTreeEvent::DragCompleted { sources, destination }` events
-so the application decides what to do with the files (move, copy,
-symlink, network upload, ...) — the widget never touches the
-filesystem itself.
+## Remaining for v1.0
 
 ### v0.5.0 — Parallel pre-expansion of visible descendants
 Expanding a folder issues one scan; expanding ten sub-folders

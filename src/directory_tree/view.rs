@@ -20,15 +20,15 @@
 use std::path::Path;
 
 use iced::{
-    Alignment, Element, Length,
-    widget::{Space, button, column, container, row, scrollable, text},
+    Alignment, Background, Border, Element, Length, Theme,
+    widget::{Space, button, column, container, mouse_area, row, scrollable, text},
 };
 
 use super::DirectoryTree;
+use super::drag::DragMsg;
 use super::icon::{Icon, render as icon_render};
 use super::message::DirectoryTreeEvent;
 use super::node::TreeNode;
-use super::selection::SelectionMode;
 
 /// Per-indent-level horizontal padding in logical pixels.
 const INDENT_STEP: f32 = 16.0;
@@ -53,7 +53,10 @@ impl DirectoryTree {
         // build a Vec explicitly because the recursion depth can
         // exceed what inference wants to handle for a chained chain.
         let mut rows: Vec<Element<'a, Message>> = Vec::new();
-        render_node(&self.root, 0, on_event, &mut rows);
+        // Snapshot the current drop target so each row can paint its
+        // own highlight if it matches.
+        let drop_target = self.drop_target();
+        render_node(&self.root, 0, drop_target, on_event, &mut rows);
 
         let list = column(rows).spacing(2).padding(4).width(Length::Fill);
 
@@ -68,23 +71,30 @@ impl DirectoryTree {
 fn render_node<'a, Message, F>(
     node: &'a TreeNode,
     depth: u32,
+    drop_target: Option<&Path>,
     on_event: F,
     out: &mut Vec<Element<'a, Message>>,
 ) where
     Message: Clone + 'a,
     F: Fn(DirectoryTreeEvent) -> Message + Copy + 'a,
 {
-    out.push(render_row(node, depth, on_event));
+    let is_drop_target = drop_target == Some(node.path.as_path());
+    out.push(render_row(node, depth, is_drop_target, on_event));
 
     if node.is_dir && node.is_expanded && node.is_loaded {
         for child in &node.children {
-            render_node(child, depth + 1, on_event, out);
+            render_node(child, depth + 1, drop_target, on_event, out);
         }
     }
 }
 
 /// Render a single row of the tree.
-fn render_row<'a, Message, F>(node: &'a TreeNode, depth: u32, on_event: F) -> Element<'a, Message>
+fn render_row<'a, Message, F>(
+    node: &'a TreeNode,
+    depth: u32,
+    is_drop_target: bool,
+    on_event: F,
+) -> Element<'a, Message>
 where
     Message: Clone + 'a,
     F: Fn(DirectoryTreeEvent) -> Message + Copy + 'a,
@@ -161,28 +171,96 @@ where
     .spacing(INTRA_ROW_GAP)
     .align_y(Alignment::Center);
 
-    let select_button = {
-        let path = node.path.clone();
-        let is_dir = node.is_dir;
-        button(selection_body)
-            .width(Length::Fill)
-            .padding(2)
-            .style(if node.is_selected {
-                button::primary
+    // --- Row hitbox (selection + drag-and-drop) ------------------
+    //
+    // v0.4: we used to wrap `selection_body` in a `button` whose
+    // `on_press` emitted `Selected(..., Replace)` directly. That
+    // worked for single-click selection but made drag-and-drop
+    // impossible, for two reasons:
+    //
+    //   1. iced 0.14's `button::on_press` fires on mouse-*up*, not
+    //      mouse-*down*, so we can't detect the start of a drag
+    //      gesture from the button alone.
+    //   2. Even if we could, a mouse-down that immediately fires
+    //      `Selected(..., Replace)` would collapse any existing
+    //      multi-selection down to the pressed row before the drag
+    //      state machine had a chance to snapshot the current set
+    //      of sources — breaking multi-item drag.
+    //
+    // The fix is twofold. First, wrap the body in a `mouse_area`,
+    // whose four event handlers (press / release / enter / exit)
+    // are what the drag state machine in `update::on_drag` needs.
+    // Second, defer selection: mouse-down emits `Drag(Pressed)`
+    // (not `Selected`), and `on_drag` emits a delayed
+    // `Selected(..., Replace)` only if the user releases on the
+    // same row — i.e., it was a click, not a drag. See
+    // `drag.rs` for the full state machine.
+    //
+    // Visual style is now provided by a styled `container` wrapper
+    // rather than by `button`. We replicate the two states `button`
+    // previously gave us — normal and primary (selected) — and add
+    // a third for the current drop target during an in-flight
+    // drag.
+    let is_selected = node.is_selected;
+    let path = node.path.clone();
+    let is_dir = node.is_dir;
+    // Clone once per handler to satisfy Fn borrow semantics.
+    let path_for_press = path.clone();
+    let path_for_enter = path.clone();
+    let path_for_exit = path.clone();
+    let path_for_release = path;
+
+    let styled_body = container(selection_body)
+        .width(Length::Fill)
+        .padding(2)
+        .style(move |theme: &Theme| {
+            let palette = theme.extended_palette();
+            if is_selected {
+                container::Style {
+                    background: Some(Background::Color(palette.primary.base.color)),
+                    text_color: Some(palette.primary.base.text),
+                    border: Border {
+                        radius: 3.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }
+            } else if is_drop_target {
+                // Drop-target highlight: soft success-coloured
+                // fill plus a 1.5-px outline, so even users with
+                // weak colour vision can see where the drop will
+                // land. Using the theme's `success` palette rather
+                // than a hard-coded green keeps dark themes
+                // readable.
+                container::Style {
+                    background: Some(Background::Color(palette.success.weak.color)),
+                    text_color: Some(palette.success.weak.text),
+                    border: Border {
+                        color: palette.success.strong.color,
+                        width: 1.5,
+                        radius: 3.0.into(),
+                    },
+                    ..Default::default()
+                }
             } else {
-                button::text
-            })
-            // Plain click always emits Replace — iced 0.14's button
-            // `on_press` can't observe modifier keys. Apps that want
-            // multi-select intercept this event and rewrite the
-            // mode based on modifier state they track via the
-            // keyboard subscription. See `examples/multi_select.rs`.
-            .on_press(on_event(DirectoryTreeEvent::Selected(
-                path,
-                is_dir,
-                SelectionMode::Replace,
-            )))
-    };
+                container::Style::default()
+            }
+        });
+
+    let select_area = mouse_area(styled_body)
+        .on_press(on_event(DirectoryTreeEvent::Drag(DragMsg::Pressed(
+            path_for_press,
+            is_dir,
+        ))))
+        .on_enter(on_event(DirectoryTreeEvent::Drag(DragMsg::Entered(
+            path_for_enter,
+        ))))
+        .on_exit(on_event(DirectoryTreeEvent::Drag(DragMsg::Exited(
+            path_for_exit,
+        ))))
+        .on_release(on_event(DirectoryTreeEvent::Drag(DragMsg::Released(
+            path_for_release,
+        ))));
 
     // Left indent. Using a Space rather than padding so the selection
     // highlight runs the full visible row width — padding would
@@ -191,7 +269,7 @@ where
     let indent = Space::new().width(Length::Fixed(indent_px));
 
     container(
-        row![indent, caret, select_button]
+        row![indent, caret, select_area]
             .spacing(INTRA_ROW_GAP)
             .align_y(Alignment::Center),
     )

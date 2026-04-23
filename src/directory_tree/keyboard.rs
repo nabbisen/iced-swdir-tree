@@ -21,6 +21,7 @@
 //! | `Space` / `Ctrl + Space` | Toggle the currently-active path in or out of the selected set. |
 //! | `Left` | If the selection is an expanded directory → collapse it. Otherwise move the selection to its parent. |
 //! | `Right` | If the selection is a collapsed directory → expand it. If it's an expanded directory with loaded children → move the selection to the first child. Otherwise no-op. |
+//! | `Escape` | If a drag is in progress → cancel it. Otherwise unbound (so apps can still bind Escape for their own UI). |
 //!
 //! "Visible row" is defined the way the view draws the tree: the
 //! root, plus every descendant whose every ancestor is expanded and
@@ -32,6 +33,7 @@ use std::path::Path;
 use iced::keyboard::{self, Modifiers, key::Named};
 
 use super::DirectoryTree;
+use super::drag::DragMsg;
 use super::message::DirectoryTreeEvent;
 use super::node::{TreeNode, VisibleRow};
 use super::selection::SelectionMode;
@@ -110,6 +112,15 @@ impl DirectoryTree {
             Named::Space => self.toggle_active(),
             Named::ArrowLeft => self.left_action(&rows),
             Named::ArrowRight => self.right_action(),
+            // v0.4: Escape cancels an in-flight drag. Emitted
+            // unconditionally — if no drag is active, the
+            // `DragMsg::Cancelled` handler in `update` is a no-op.
+            // We only surface the event if a drag is actually in
+            // progress so that apps can still bind Escape to
+            // their own actions when the tree isn't dragging.
+            Named::Escape if self.drag.is_some() => {
+                Some(DirectoryTreeEvent::Drag(DragMsg::Cancelled))
+            }
             _ => None,
         }
     }
@@ -491,12 +502,35 @@ mod tests {
     }
 
     #[test]
-    fn unbound_keys_return_none() {
+    fn escape_cancels_an_in_flight_drag() {
+        let mut tree = make_tree();
+        // Start a drag. Escape should now produce a Cancelled event.
+        let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Pressed(
+            PathBuf::from("/r/a"),
+            true,
+        )));
+        assert!(tree.is_dragging());
+        match tree.handle_key(&press(Named::Escape), Modifiers::default()) {
+            Some(DirectoryTreeEvent::Drag(DragMsg::Cancelled)) => {}
+            other => panic!("expected Drag(Cancelled), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn escape_is_unbound_when_no_drag_is_active() {
+        // No drag → Escape stays unbound so the app can still use
+        // it for its own dialogs/overlays.
         let tree = make_tree();
         assert!(
             tree.handle_key(&press(Named::Escape), Modifiers::default())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn unbound_keys_return_none() {
+        let tree = make_tree();
+        // Escape is covered by `escape_is_unbound_when_no_drag_is_active`.
         assert!(
             tree.handle_key(
                 &iced::keyboard::Key::Character("x".into()),

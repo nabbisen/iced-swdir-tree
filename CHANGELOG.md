@@ -5,6 +5,102 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] — 2026-04-24
+
+Delivers the second of the five v1.0-required roadmap items:
+**drag-and-drop between nodes**. The widget tracks drag gestures
+internally and emits a `DragCompleted { sources, destination }`
+event on successful drop; the application decides what to do with
+the paths (move / copy / symlink / upload / anything). The widget
+performs no filesystem operations itself.
+
+### Added
+
+- **New event variants on `DirectoryTreeEvent`:**
+  - `Drag(DragMsg)` — opaque drag-machinery event. Apps route it
+    back through `tree.update()` unchanged, exactly like `Loaded`.
+  - `DragCompleted { sources: Vec<PathBuf>, destination: PathBuf }`
+    — fires when the user releases the mouse over a valid folder
+    row. Apps observe this event to perform the actual filesystem
+    operation.
+- **New public `DragMsg` enum** — re-exported from the crate root.
+  Variants: `Pressed(PathBuf, bool)`, `Entered(PathBuf)`,
+  `Exited(PathBuf)`, `Released(PathBuf)`, `Cancelled`. Generally
+  constructed by the widget itself; apps only need to match on
+  `Cancelled` if they want to force-cancel a drag.
+- **Three new accessors on `DirectoryTree`:**
+  - `is_dragging() -> bool`
+  - `drop_target() -> Option<&Path>` — the currently-hovered valid
+    folder target, or `None` when over empty space / files / self / a
+    descendant of a source.
+  - `drag_sources() -> &[PathBuf]` — paths being dragged.
+- **Drag-aware drop-target highlight** in the built-in view. The
+  hovered folder row paints with the theme's `success.weak`
+  background and a `success.strong` outline.
+- **Deferred-selection pattern.** Mouse-down on a row no longer
+  immediately collapses a multi-selection down to that row. If the
+  user releases on the same row the widget emits a delayed
+  `Selected(path, is_dir, Replace)`; if they release on a different
+  valid folder it emits `DragCompleted` instead. This matches
+  Explorer / Finder behaviour — you can drag a multi-selection
+  without losing it.
+- **Multi-item drag.** Pressing on a row that's already in the
+  selection drags the whole selected set; pressing on an unselected
+  row drags only that row.
+- **`Escape` cancels an in-flight drag.** The widget's built-in key
+  handler produces `Drag(Cancelled)` when `Escape` is pressed while
+  a drag is active. When no drag is active, `Escape` stays unbound
+  so apps can still use it for their own UI.
+- **`examples/drag_drop.rs`** — a complete working example that
+  performs `fs::rename` on `DragCompleted` and refreshes affected
+  folders. Includes modifier tracking for multi-select, live
+  drag-preview status bar, and a safe default scratch directory
+  under the OS temp dir so you can experiment without data risk.
+
+### Changed
+
+- **Row hit-testing is now a `mouse_area` around a styled
+  `container`** rather than a `button`. This was required to
+  observe mouse-down (for drag start) separately from mouse-up
+  (for click vs. drag disambiguation) — iced 0.14's
+  `button::on_press` fires only on click-completion. The
+  user-visible row appearance is unchanged for the normal and
+  selected states (the container style reproduces `button::text`
+  and `button::primary` via the theme's `palette.primary.base`).
+  Files still align with folders because the caret is still its
+  own button on directory rows and a fixed-size `Space` on files.
+- **Known trade-off:** non-selected rows lose the native hover
+  glow that `button::text` provided, because `mouse_area` + plain
+  `container` don't track hover state. Selected rows still paint
+  with the primary-base background. A future version may add an
+  explicit hover style; the omission is deliberate for now in
+  favour of shipping drag-and-drop soon.
+- **Known behaviour:** if the user releases the mouse outside the
+  tree (over a scrollbar, empty space, another window), the drag
+  state stays active until they press `Escape` or the app forces
+  a `Cancelled`. A fix via an `iced::event::listen` subscription
+  is possible but deliberately deferred — this matches what most
+  native file browsers do.
+
+### Public API — no breaking changes to existing code paths
+
+- `DirectoryTreeEvent` is non-exhaustive and gains two new variants.
+  Apps that exhaustively `match` on it without a `_` arm need to
+  add arms for `Drag` (route back to `tree.update`) and
+  `DragCompleted` (the app's own move/copy/etc. logic). Most apps
+  use `.map(MyMessage::Tree)` and don't need changes.
+
+### Tests
+
+- **100 total (up from 70):** 60 unit + 10 + 29 integration + 1
+  doctest. New coverage includes 6 `DragState::is_valid_target`
+  unit tests (file rejected, self rejected, descendant rejected,
+  sibling accepted, parent accepted, prefix-but-not-ancestor
+  accepted), 12 state-machine transition tests for `on_drag`, 2
+  keyboard tests for Escape-cancels / Escape-unbound-without-drag,
+  and 11 integration tests driving the full public API against a
+  real temp filesystem.
+
 ## [0.3.0] — 2026-04-23
 
 Delivers the first of the five v1.0-required roadmap items:

@@ -6,6 +6,7 @@ src/
   directory_tree.rs            # State struct and builder methods
   directory_tree/
     config.rs                  # DirectoryFilter, TreeConfig
+    drag.rs                    # DragMsg + DragState state machine (v0.4)
     error.rs                   # Crate Error type
     executor.rs                # ScanExecutor trait, ThreadExecutor default
     icon.rs                    # Feature-gated icon renderer (lucide / text)
@@ -22,9 +23,9 @@ The public API is intentionally small. The internal layering
 separates state ownership (`directory_tree.rs`), events (`message.rs`),
 state transitions (`update.rs`), rendering (`view.rs`), data access
 (`walker.rs`), blocking-work dispatch (`executor.rs`), keyboard
-translation (`keyboard.rs`), and selection modes (`selection.rs`),
-which makes room for the remaining v1.0 roadmap items
-(drag-and-drop, parallel pre-expand, incremental search, icon
+translation (`keyboard.rs`), selection modes (`selection.rs`), and
+drag-and-drop state (`drag.rs`), which makes room for the remaining
+v1.0 roadmap items (parallel pre-expand, incremental search, icon
 themes) without touching the widget surface.
 
 ## Selection model (v0.3+)
@@ -80,3 +81,36 @@ backed by a `ScanFuture`, itself obtained from
 apps that already run a blocking-task pool. Those apps can
 implement `ScanExecutor` (one method, `spawn_blocking`) and swap
 it in at construction time via `DirectoryTree::with_executor`.
+
+## Drag-and-drop (v0.4+)
+
+`drag.rs` holds a small finite-state machine. In state `Idle` the
+widget has no active drag; `drag` on `DirectoryTree` is `None`. A
+press on a row transitions to `Dragging { sources, primary,
+primary_is_dir, hover }` where `sources` is the current selected
+set if the pressed row is in it, otherwise just the pressed row —
+matching Explorer/Finder behaviour. `Entered`/`Exited` events
+update `hover` (only if the incoming path is a valid drop target
+per the three rules in `DragState::is_valid_target`). `Released`
+inspects the state: same row as `primary` → emit a delayed
+`Selected(..., Replace)` via `Task::done` (this is the
+"deferred selection" pattern that makes multi-item drag possible);
+different row with a valid `hover` → emit `DragCompleted { sources,
+destination }`; anything else → clear state silently. `Cancelled`
+(from Escape or an app-initiated abort) clears state unconditionally.
+
+The widget never performs a filesystem operation; `DragCompleted`
+is the app's cue to act. This keeps the widget reusable for
+non-local backends (zip archives, network mounts, abstract
+hierarchies) without dragging in I/O assumptions.
+
+View-layer row hitboxes switched from `button` to
+`mouse_area(container)` in v0.4. The reason is that iced 0.14's
+`button::on_press` fires only on click-completion, so there's no
+way to observe mouse-down as a distinct event from mouse-up. A
+`mouse_area` exposes `on_press` / `on_release` / `on_enter` /
+`on_exit` separately, which is exactly what the state machine
+needs. The cost is that the plain container doesn't track hover
+state the way `button::text` did — non-selected rows lose their
+native hover glow. Selected and drop-target rows still paint with
+styled backgrounds from the theme's extended palette.

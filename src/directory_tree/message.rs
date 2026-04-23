@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use super::drag::DragMsg;
 use super::node::LoadedEntry;
 use super::selection::SelectionMode;
 
@@ -69,6 +70,44 @@ pub enum DirectoryTreeEvent {
     /// mode before forwarding the event — [`SelectionMode::from_modifiers`]
     /// makes that a one-liner.
     Selected(PathBuf, bool, SelectionMode),
+
+    /// Internal drag-machinery event.
+    ///
+    /// Emitted by the widget's built-in view as the user presses a
+    /// row, moves across others, and releases. Applications should
+    /// treat these as opaque and always route them back to
+    /// [`DirectoryTree::update`](crate::DirectoryTree::update) —
+    /// just like [`Loaded`](Self::Loaded).
+    ///
+    /// The widget's internal state machine may produce a
+    /// [`Selected`](Self::Selected) or a [`DragCompleted`](Self::DragCompleted)
+    /// as the downstream effect of a [`Drag`](Self::Drag) message.
+    /// Apps observe those downstream events via the usual
+    /// `.map(MyMessage::Tree)` routing — no extra plumbing needed.
+    Drag(DragMsg),
+
+    /// The user completed a drag gesture with intent to move (or
+    /// otherwise transplant) `sources` into `destination`.
+    ///
+    /// The widget performs **no filesystem operation** on its own.
+    /// Applications observe this event, perform whatever action
+    /// they wish (move, copy, symlink, upload, ignore), and
+    /// re-scan affected folders by emitting `Toggled` events
+    /// (collapse then re-expand) to refresh the tree view.
+    ///
+    /// `destination` is guaranteed to be a directory that is not
+    /// itself in `sources` nor a descendant of any source — see
+    /// [`DragMsg`](crate::DragMsg) for the validity rules.
+    /// `sources` is non-empty.
+    DragCompleted {
+        /// One or more paths the user started dragging. This is
+        /// the [selected set](crate::DirectoryTree::selected_paths)
+        /// at drag start if the pressed row was in the selection,
+        /// otherwise just the pressed row.
+        sources: Vec<PathBuf>,
+        /// The folder over which the user released the mouse.
+        destination: PathBuf,
+    },
 
     /// Internal: an asynchronous scan completed.
     ///

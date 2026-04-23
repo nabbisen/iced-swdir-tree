@@ -7,6 +7,7 @@
 //! and configuration.
 
 pub(crate) mod config;
+pub(crate) mod drag;
 pub(crate) mod error;
 pub(crate) mod executor;
 pub(crate) mod icon;
@@ -86,6 +87,15 @@ pub struct DirectoryTree {
     /// successive Shift+clicks all extend from the same origin —
     /// matching Windows Explorer / Finder / VS Code behaviour.
     pub(crate) anchor_path: Option<std::path::PathBuf>,
+    /// In-progress drag state, if the user currently has the mouse
+    /// button held after pressing on a row. `None` otherwise.
+    ///
+    /// See [`drag`](crate::directory_tree::drag) for the state
+    /// machine that governs this field. The widget itself performs
+    /// no filesystem operations; it just tracks the drag and emits
+    /// [`DragCompleted`](crate::DirectoryTreeEvent::DragCompleted)
+    /// on successful drop.
+    pub(crate) drag: Option<drag::DragState>,
     /// Pluggable executor that runs blocking `scan_dir` calls.
     ///
     /// Defaults to [`ThreadExecutor`] (one `std::thread::spawn` per
@@ -118,6 +128,7 @@ impl DirectoryTree {
             selected_paths: Vec::new(),
             active_path: None,
             anchor_path: None,
+            drag: None,
             executor: Arc::new(ThreadExecutor),
         }
     }
@@ -253,6 +264,31 @@ impl DirectoryTree {
     /// `true` if `path` is in the selected set. O(n) in the set size.
     pub fn is_selected(&self, path: &std::path::Path) -> bool {
         self.selected_paths.iter().any(|p| p == path)
+    }
+
+    /// `true` when a drag gesture is in progress.
+    ///
+    /// Apps can use this to dim unrelated UI or change cursors,
+    /// but the widget's own rendering already reflects drag state
+    /// via the drop-target highlight.
+    pub fn is_dragging(&self) -> bool {
+        self.drag.is_some()
+    }
+
+    /// Read-only view of the currently-hovered drop target, iff
+    /// a drag is in progress and the cursor is over a valid folder.
+    ///
+    /// Returns `None` when there is no drag, or when the cursor is
+    /// over an invalid target (a file, one of the sources, a
+    /// descendant of a source, or empty space).
+    pub fn drop_target(&self) -> Option<&std::path::Path> {
+        self.drag.as_ref().and_then(|d| d.hover.as_deref())
+    }
+
+    /// Read-only view of the paths being dragged, iff a drag is in
+    /// progress. Empty slice if there's no drag.
+    pub fn drag_sources(&self) -> &[std::path::PathBuf] {
+        self.drag.as_ref().map_or(&[], |d| d.sources.as_slice())
     }
 
     /// Re-apply [`DirectoryTree::selected_paths`] to the per-node

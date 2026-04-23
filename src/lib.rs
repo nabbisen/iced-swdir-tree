@@ -60,6 +60,18 @@
 //! keyboard subscription and rewrite the mode in their own update
 //! handler using [`SelectionMode::from_modifiers`].
 //!
+//! ## Drag-and-drop
+//!
+//! The widget tracks drag gestures internally and emits a
+//! [`DragCompleted`](DirectoryTreeEvent::DragCompleted)`{ sources,
+//! destination }` event when the user releases the mouse over a
+//! valid folder row. The widget performs **no** filesystem
+//! operation — the app reacts to `DragCompleted` and does move /
+//! copy / symlink / upload however it likes, then re-scans the
+//! affected folders by emitting a `Toggled` collapse+expand to
+//! refresh. See `examples/drag_drop.rs` for a worked example that
+//! performs `fs::rename` on drop.
+//!
 //! ## Feature flags
 //!
 //! * **`icons`** (off by default) — when enabled, uses [`lucide-icons`] for
@@ -78,6 +90,7 @@ mod directory_tree;
 pub use crate::directory_tree::{
     DirectoryTree,
     config::{DirectoryFilter, TreeConfig},
+    drag::DragMsg,
     error::Error,
     executor::{ScanExecutor, ScanFuture, ScanJob, ThreadExecutor},
     message::{DirectoryTreeEvent, LoadPayload},
