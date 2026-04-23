@@ -6,27 +6,41 @@ src/
   directory_tree.rs            # State struct and builder methods
   directory_tree/
     config.rs                  # DirectoryFilter, TreeConfig
+    config/tests.rs
     drag.rs                    # DragMsg + DragState state machine (v0.4)
+    drag/tests.rs
     error.rs                   # Crate Error type
     executor.rs                # ScanExecutor trait, ThreadExecutor default
     icon.rs                    # Feature-gated icon renderer (lucide / text)
     keyboard.rs                # handle_key adapter + bindings
+    keyboard/tests.rs
     message.rs                 # DirectoryTreeEvent + LoadPayload
     node.rs                    # TreeNode, LoadedEntry, TreeCache, VisibleRow
+    node/tests.rs
     selection.rs               # SelectionMode enum + from_modifiers
-    update.rs                  # State machine for update()
+    selection/tests.rs
+    update.rs                  # update() dispatcher + depth_of helper
+    update/
+      on_toggled.rs            # expand/collapse handler (v0.4.1 split)
+      on_selected.rs           # SelectionMode handler + range helper
+      on_drag.rs               # drag state machine handler
+      on_loaded.rs             # async-scan merge + build_children
+      tests.rs
     view.rs                    # Render function for view()
     walker.rs                  # async scan wrapper + normalization
+    walker/tests.rs
 ```
 
 The public API is intentionally small. The internal layering
 separates state ownership (`directory_tree.rs`), events (`message.rs`),
-state transitions (`update.rs`), rendering (`view.rs`), data access
-(`walker.rs`), blocking-work dispatch (`executor.rs`), keyboard
-translation (`keyboard.rs`), selection modes (`selection.rs`), and
-drag-and-drop state (`drag.rs`), which makes room for the remaining
-v1.0 roadmap items (parallel pre-expand, incremental search, icon
-themes) without touching the widget surface.
+state transitions (`update.rs` and its `update/on_xxx.rs`
+submodules — one per event variant, added in v0.4.1), rendering
+(`view.rs`), data access (`walker.rs`), blocking-work dispatch
+(`executor.rs`), keyboard translation (`keyboard.rs`), selection
+modes (`selection.rs`), and drag-and-drop state (`drag.rs`), which
+makes room for the remaining v1.0 roadmap items (parallel
+pre-expand, incremental search, icon themes) without touching the
+widget surface.
 
 ## Selection model (v0.3+)
 

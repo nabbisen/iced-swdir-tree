@@ -5,6 +5,71 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] — 2026-04-24
+
+**Pure refactor release. No behaviour changes, no public API changes,
+no new or removed tests — the 100-test suite is identical in structure
+and passes verbatim against 0.4.0 semantics.**
+
+The motivation was file size: `update.rs` had grown to 937 lines, and
+`keyboard.rs` to 542, each mixing production code with a large
+end-of-file `#[cfg(test)] mod tests { ... }` block. Both thresholds
+make it harder to navigate one handler without scrolling past the
+others, and they hide the tests from anyone grepping for a specific
+test name.
+
+### Changed — internal layout only
+
+- **Every inline `mod tests` block is now a sibling file.** Seven
+  modules now declare `#[cfg(test)] mod tests;` and carry their
+  tests in a `<module>/tests.rs` file: `config`, `drag`,
+  `keyboard`, `node`, `selection`, `update`, and `walker`. Rust
+  2018+ supports `foo.rs` living next to a `foo/` directory of
+  submodules, so this keeps the crate-root namespace exactly as it
+  was. No test names changed; the same 60 unit tests run in the
+  same places.
+- **`update.rs` split into a dispatcher + four handler
+  submodules.** The `update` module now owns only the `update()`
+  dispatch match, the shared `depth_of` helper, and
+  `__test_expand_blocking`. Each event's logic lives in its own
+  file:
+  - `update/on_toggled.rs` — expand/collapse, triggers scans.
+  - `update/on_selected.rs` — the three `SelectionMode` branches
+    plus the `compute_visible_range` helper.
+  - `update/on_drag.rs` — the v0.4 drag state machine.
+  - `update/on_loaded.rs` — async-scan result merge, plus the
+    private `build_children` helper.
+
+  Handler methods are now `pub(super) fn on_xxx` so the parent
+  dispatcher can still call them; they were previously private.
+  This is a visibility loosening within the crate only — the
+  public API is identical.
+- **`keyboard.rs` tests extracted** without splitting the
+  production module itself. The `handle_key` dispatcher and its
+  action helpers are a single cohesive feature (per-key match arm
+  helpers), and splitting them would have been arbitrary. Tests
+  in `keyboard/tests.rs` (281 lines) now sit cleanly alongside.
+
+### File size impact
+
+| File | 0.4.0 | 0.4.1 |
+|---|---|---|
+| `update.rs` | 937 | 136 |
+| `keyboard.rs` | 542 | 262 |
+| Largest test file | `update.rs` (478 inline) | `update/tests.rs` (481) |
+| Largest production file | `update.rs` (459) | `view.rs` (285) |
+
+No file above 300 lines of production code remains.
+
+### Risk summary
+
+This release touches 60 % of the crate by file, but every change is
+mechanical file-placement: contents were moved, not rewritten. The
+full test matrix (`cargo test`, `cargo test --all-features`,
+`cargo clippy --all-targets --all-features -- -D warnings`,
+`RUSTDOCFLAGS="-D warnings" cargo doc`,
+`cargo publish --dry-run --all-features`) is clean.
+
 ## [0.4.0] — 2026-04-24
 
 Delivers the second of the five v1.0-required roadmap items:

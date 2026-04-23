@@ -29,6 +29,13 @@ deferred-selection so clicks on multi-selected rows don't collapse
 the set, an Escape-to-cancel keybind, and the `drag_drop` example
 that performs `fs::rename` on drop.
 
+### v0.4.1 — Internal refactor ✅
+See [CHANGELOG](CHANGELOG.md#041--2026-04-24). Pure file-layout
+refactor: seven inline `#[cfg(test)] mod tests { ... }` blocks
+moved to sibling `<module>/tests.rs` files, and `update.rs` split
+into a thin dispatcher plus four per-event handler submodules.
+No behaviour or API changes.
+
 ## Remaining for v1.0
 
 ### v0.5.0 — Parallel pre-expansion of visible descendants
