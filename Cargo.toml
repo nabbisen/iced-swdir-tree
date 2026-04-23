@@ -1,0 +1,41 @@
+[package]
+name = "iced-swdir-tree"
+version = "0.1.0"
+edition = "2024"
+description = "iced widget for file tree powered by swdir, supporting selection, lazy loading and filtering."
+authors = ["nabbisen <nabbisen@scqr.net>"]
+license = "Apache-2.0"
+categories = ["gui", "filesystem"]
+keywords = ["iced", "widget", "directory", "tree", "filesystem"]
+readme = "README.md"
+repository = "https://github.com/nabbisen/iced-swdir-tree"
+
+[features]
+default = []
+# Enable lucide-icons integration. Without this, icons fall back to short text labels.
+icons = ["dep:lucide-icons"]
+
+[dependencies]
+iced = "0.14"
+swdir = "0.9"
+
+[dependencies.lucide-icons]
+version = "1"
+features = ["iced"]
+optional = true
+
+[dev-dependencies]
+# Integration tests operate on temp directories; no dev deps required.
+
+[[example]]
+name = "basic"
+path = "examples/basic.rs"
+
+[[example]]
+name = "with_icons"
+path = "examples/with_icons.rs"
+required-features = ["icons"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

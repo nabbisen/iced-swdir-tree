@@ -1,2 +1,156 @@
 # iced-swdir-tree
-iced widget for file tree powered by swdir.
+
+A reusable [iced](https://iced.rs) widget for displaying a directory tree with
+selection, lazy loading, filtering and asynchronous traversal.
+
+Built on top of [swdir](https://crates.io/crates/swdir)'s `scan_dir` for
+single-level, non-recursive directory listings — ideal for GUI trees that
+expand one folder at a time.
+
+## Features
+
+- **Single-select.** Clicks emit a `Selected(PathBuf, bool)` event; the
+  `bool` indicates whether the target is a directory.
+- **Lazy loading.** Only the root is created eagerly; child folders are
+  scanned on first expand.
+- **Non-blocking.** Directory traversal runs on a worker thread through
+  `iced::Task::perform`; the UI thread never stalls on disk I/O.
+- **Three display filters.** `FoldersOnly`, `FilesAndFolders` (default),
+  `AllIncludingHidden`. Filter changes are applied from an in-memory cache,
+  so switching is instant — no re-scan.
+- **Stale-result handling.** Every scan carries a generation counter, so a
+  collapse/re-expand cycle safely discards in-flight results from the
+  cancelled round-trip.
+- **Error tolerance.** Permission denials, missing paths, and symlink
+  cycles are surfaced as per-node errors that the view greys out — no
+  panics, no UI freezes.
+- **Optional lucide icons.** Disabled by default; enable the `icons`
+  feature to pull in real vector glyphs. The public API is identical in
+  both modes.
+- **Cross-platform.** Hidden-file detection follows OS conventions: dotfile
+  on Unix, `HIDDEN` attribute plus dotfile fallback on Windows, dotfile
+  elsewhere.
+
+## Installation
+
+```toml
+[dependencies]
+iced = "0.14"
+iced-swdir-tree = "0.1"
+```
+
+To use real lucide icons instead of the Unicode-symbol fallback:
+
+```toml
+[dependencies]
+iced = "0.14"
+iced-swdir-tree = { version = "0.1", features = ["icons"] }
+```
+
+The crate works without your application adding `swdir` directly — the
+widget internally wraps it and exposes the pieces you need through its own
+API.
+
+## Quick start
+
+```rust,no_run
+use std::path::PathBuf;
+use iced::{Element, Task};
+use iced_swdir_tree::{DirectoryFilter, DirectoryTree, DirectoryTreeEvent};
+
+#[derive(Debug, Clone)]
+enum Message {
+    Tree(DirectoryTreeEvent),
+}
+
+struct App {
+    tree: DirectoryTree,
+}
+
+impl App {
+    fn new() -> (Self, Task<Message>) {
+        let tree = DirectoryTree::new(PathBuf::from("."))
+            .with_filter(DirectoryFilter::FilesAndFolders);
+        (Self { tree }, Task::none())
+    }
+
+    fn update(&mut self, message: Message) -> Task<Message> {
+        match message {
+            Message::Tree(event) => {
+                // React to app-level side effects BEFORE forwarding.
+                if let DirectoryTreeEvent::Selected(path, is_dir) = &event {
+                    println!("selected {:?} (dir={})", path, is_dir);
+                }
+                self.tree.update(event).map(Message::Tree)
+            }
+        }
+    }
+
+    fn view(&self) -> Element<'_, Message> {
+        self.tree.view(Message::Tree)
+    }
+}
+
+fn main() -> iced::Result {
+    iced::application(App::new, App::update, App::view).run()
+}
+```
+
+For a working example with a filter picker and a selection status bar, see
+[`examples/basic.rs`](examples/basic.rs). For the lucide-icons version, see
+[`examples/with_icons.rs`](examples/with_icons.rs).
+
+### Using the `icons` feature
+
+When `icons` is enabled, register the bundled lucide TTF with iced at
+startup:
+
+```rust,ignore
+use iced_swdir_tree::LUCIDE_FONT_BYTES;
+
+fn main() -> iced::Result {
+    iced::application(App::new, App::update, App::view)
+        .font(LUCIDE_FONT_BYTES)
+        .run()
+}
+```
+
+Without this registration the icon widgets still render, but as tofu
+squares — the default system font doesn't have the lucide glyphs.
+
+## Configuration
+
+```rust,no_run
+# use std::path::PathBuf;
+# use iced_swdir_tree::{DirectoryFilter, DirectoryTree};
+let tree = DirectoryTree::new(PathBuf::from("."))
+    .with_filter(DirectoryFilter::AllIncludingHidden)
+    .with_max_depth(5);
+```
+
+| Method | Purpose |
+|---|---|
+| `new(root)` | Build a tree rooted at `root`. Only the root is eagerly created. |
+| `with_filter(f)` | Builder form of `set_filter`. |
+| `with_max_depth(d)` | Refuse to load below depth `d` (0 = root children only). |
+| `set_filter(f)` | Change the filter at runtime. Re-derives from cache; no I/O. |
+| `filter()`, `max_depth()`, `root_path()`, `selected_path()` | Read accessors. |
+
+## Events
+
+The widget emits `DirectoryTreeEvent`:
+
+- `Toggled(PathBuf)` — the user clicked the caret on a folder.
+- `Selected(PathBuf, bool)` — the user clicked a row; `bool` is
+  `true` for directories, `false` for files.
+- `Loaded(LoadPayload)` — internal; a pending scan completed.
+  Parent applications route it straight back into `update()` without
+  inspecting it.
+
+## Architecture
+
+See [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Testing
+
+See [DEVELOPMENT.md#testing](DEVELOPMENT.md#testing).

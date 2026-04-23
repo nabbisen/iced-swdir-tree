@@ -1,0 +1,98 @@
+//! Message types.
+//!
+//! [`DirectoryTreeEvent`] is the single message type flowing in and out
+//! of the widget. Two variants are user-facing (`Toggled`, `Selected`);
+//! a third (`Loaded`) carries async scan results and is opaque — parent
+//! applications pass it through `update` without needing to introspect
+//! it.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use super::node::LoadedEntry;
+
+/// A message emitted by or consumed by the [`DirectoryTree`](crate::DirectoryTree) widget.
+///
+/// ## For parent applications
+///
+/// Wrap this in one of your own `Message` variants:
+///
+/// ```ignore
+/// enum MyMessage {
+///     Tree(iced_swdir_tree::DirectoryTreeEvent),
+///     // ...
+/// }
+/// ```
+///
+/// Route every `Tree(event)` to [`DirectoryTree::update`] and map its
+/// returned `Task` back. Pattern-match on `Toggled` / `Selected` *before*
+/// forwarding if you want app-level side effects (e.g. previewing the
+/// selected file):
+///
+/// ```ignore
+/// fn update(&mut self, msg: MyMessage) -> Task<MyMessage> {
+///     match msg {
+///         MyMessage::Tree(event) => {
+///             if let DirectoryTreeEvent::Selected(path, _) = &event {
+///                 self.preview(path);
+///             }
+///             self.tree.update(event).map(MyMessage::Tree)
+///         }
+///     }
+/// }
+/// ```
+///
+/// [`DirectoryTree::update`]: crate::DirectoryTree::update
+#[derive(Debug, Clone)]
+pub enum DirectoryTreeEvent {
+    /// A folder was toggled open/closed by the user.
+    ///
+    /// On first expansion the widget issues an async scan whose result
+    /// arrives later as [`DirectoryTreeEvent::Loaded`]. Subsequent
+    /// toggles of the same folder are instant — children stay in the
+    /// internal cache.
+    Toggled(PathBuf),
+
+    /// An item was selected by the user.
+    ///
+    /// The `bool` indicates whether the selected path is a directory
+    /// (`true`) or a file (`false`).
+    Selected(PathBuf, bool),
+
+    /// Internal: an asynchronous scan completed.
+    ///
+    /// Parent applications should not construct this variant themselves;
+    /// it is produced by `iced::Task`s that [`DirectoryTree::update`]
+    /// returns and is routed back to `update` through the app's message
+    /// plumbing. Treat it as opaque.
+    ///
+    /// [`DirectoryTree::update`]: crate::DirectoryTree::update
+    Loaded(LoadPayload),
+}
+
+/// The payload of [`DirectoryTreeEvent::Loaded`].
+///
+/// The fields are crate-private so the internal representation can
+/// evolve without breaking callers — `Clone` / `Debug` are sufficient
+/// for anything a parent application needs to do with the message.
+#[derive(Debug, Clone)]
+pub struct LoadPayload {
+    /// Directory whose scan completed.
+    pub(crate) path: PathBuf,
+    /// Generation counter snapshot taken when the scan was issued.
+    /// Used to drop stale results if the user has since collapsed and
+    /// re-expanded the folder.
+    pub(crate) generation: u64,
+    /// Depth of `path` relative to the tree's root — kept here so the
+    /// update layer doesn't have to re-walk the tree to find it, and
+    /// reserved for future per-depth UI feedback (e.g. showing a
+    /// "reached max depth" indicator on the triggering node).
+    #[allow(dead_code)]
+    pub(crate) depth: u32,
+    /// The scan outcome.
+    ///
+    /// `Arc` keeps the message cheaply cloneable even when the entry
+    /// vector is large — iced passes messages by value and clones them
+    /// en route to subscribers.
+    pub(crate) result: Arc<Result<Vec<LoadedEntry>, crate::Error>>,
+}
