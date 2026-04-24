@@ -1,5 +1,10 @@
 # iced-swdir-tree
 
+[![crates.io](https://img.shields.io/crates/v/iced-swdir-tree?label=rust)](https://crates.io/crates/iced-swdir-tree)
+[![License](https://img.shields.io/github/license/nabbisen/iced-swdir-tree)](https://github.com/nabbisen/iced-swdir-tree/blob/main/LICENSE)
+[![Documentation](https://docs.rs/iced-swdir-tree/badge.svg?version=latest)](https://docs.rs/iced-swdir-tree)
+[![Dependency Status](https://deps.rs/crate/iced-swdir-tree/latest/status.svg)](https://deps.rs/crate/iced-swdir-tree)
+
 A reusable [iced](https://iced.rs) widget for displaying a directory tree with
 selection, lazy loading, filtering and asynchronous traversal.
 

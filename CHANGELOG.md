@@ -5,6 +5,72 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] — 2026-04-24
+
+**Pure refactor release. No behaviour changes, no public API
+changes. The same 100 tests run, with the same names, across the
+new layout.**
+
+Where [0.4.1](#041--2026-04-24) split up the `src/` tree, this
+release applies the same principle to `tests/`. The two existing
+integration files had each grown past 400 lines with several
+well-defined themes each: `integration.rs` (430 lines) mixed
+filter modes, expand/collapse, selection, runtime filter flips,
+and error paths into one binary; `tree.rs` (819 lines) layered
+v0.2, v0.3, and v0.4 sections plus an unlabeled catch-all
+"Tests" block on top.
+
+### Changed — test layout only
+
+- **Shared fixtures moved to `tests/common/mod.rs`.** `TmpDir` and
+  the tree-introspection helpers (`child_names`, `find_in_tree`,
+  `is_root`) used to be re-declared at the top of each integration
+  file — now they live in one place. Rust's test harness treats
+  subdirectories under `tests/` as shared code, not as independent
+  test binaries, so `mod common;` at the top of each test file
+  pulls them in without spinning up another compilation target.
+- **`tests/integration.rs` → 5 themed files:**
+  - `filter_modes.rs` — the three `DirectoryFilter` variants (3 tests)
+  - `expand_collapse.rs` — expand, collapse, re-expand round-trip (2 tests)
+  - `selection_basic.rs` — single-select under `SelectionMode::Replace` (1 test)
+  - `runtime_filter.rs` — `set_filter` changing visibility without a
+    rescan (1 test)
+  - `error_paths.rs` — nonexistent path, unknown Toggled target,
+    permission-denied (3 tests)
+- **`tests/tree.rs` → 7 themed files:**
+  - `tree_filters.rs` — the four filter-mode tests against real FS
+    (4 tests)
+  - `tree_filter_preservation.rs` — state-preservation across filter
+    flips and collapse/re-expand cycles (3 tests)
+  - `tree_selection.rs` — single-selection behaviour with filter
+    interaction (3 tests)
+  - `tree_errors.rs` — error surfacing on nonexistent path and
+    permission denial (2 tests)
+  - `tree_executor.rs` — v0.2 custom `ScanExecutor` plumbing
+    (2 tests)
+  - `tree_multi_select.rs` — v0.3 `SelectionMode` matrix against
+    real FS trees (4 tests)
+  - `tree_drag_drop.rs` — v0.4 drag-and-drop state-machine
+    invariants (11 tests)
+
+### File size impact
+
+| | 0.4.1 | 0.4.2 (max) |
+|---|---|---|
+| Largest test file | `tree.rs` (819) | `tree_drag_drop.rs` (~210) |
+| Test binaries | 2 | 12 + common helper |
+
+Every test file now sits under ~210 lines; most are under 120.
+
+### Risk summary
+
+Same as 0.4.1 — contents were moved, not rewritten. Full test
+matrix (`cargo test`, `cargo test --all-features`,
+`cargo clippy --all-targets --all-features -- -D warnings`,
+`RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --all-features`,
+`cargo publish --dry-run`) is clean. Nothing on the public API
+surface changed; downstream apps need not bump their code.
+
 ## [0.4.1] — 2026-04-24
 
 **Pure refactor release. No behaviour changes, no public API changes,

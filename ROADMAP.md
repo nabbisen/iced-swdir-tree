@@ -36,6 +36,12 @@ moved to sibling `<module>/tests.rs` files, and `update.rs` split
 into a thin dispatcher plus four per-event handler submodules.
 No behaviour or API changes.
 
+### v0.4.2 — Test-layout refactor ✅
+See [CHANGELOG](CHANGELOG.md#042--2026-04-24). Pure `tests/`
+reorganization: the two large integration binaries split into 12
+themed files plus a shared `tests/common/mod.rs` helper. Same
+100 tests, same names, same behaviour; smaller files.
+
 ## Remaining for v1.0
 
 ### v0.5.0 — Parallel pre-expansion of visible descendants
