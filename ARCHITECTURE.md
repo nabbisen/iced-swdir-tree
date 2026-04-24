@@ -160,3 +160,58 @@ it, producing empty targets. A user-initiated scan never has its
 path in `prefetching_paths` (or, if it did, `on_toggled` removed
 it before the new scan was issued), so its result produces
 non-empty targets.
+
+## Incremental search (v0.6+)
+
+Search is a **view-layer filter**; it doesn't mutate the node
+graph. Three pieces coordinate:
+
+1. **`SearchState { query, query_lower, visible_paths: HashSet,
+   match_count }`** in `src/directory_tree/search.rs`. Held at
+   `DirectoryTree::search: Option<SearchState>`. `None` when
+   search is inactive (the default).
+2. **`recompute_search_visibility()`** walks the whole loaded
+   tree, populates `visible_paths` with matches plus their
+   ancestor chains, and increments `match_count` per direct
+   match. Called on: `set_search_query`, `set_filter`, and every
+   successful `on_loaded`. O(N_loaded) per call.
+3. **`DirectoryTree::visible_rows()`** dispatches: no search →
+   delegate to `TreeNode::visible_rows` (the v0.1–0.5 walker
+   that respects `is_expanded`); search active → walk via
+   `collect_search_visible`, which skips non-visible nodes and
+   **always descends** into children regardless of `is_expanded`.
+   Both keyboard nav and view rendering go through this wrapper.
+
+The view-layer `render_node` in `src/directory_tree/view.rs`
+takes an optional `search_visible: Option<&HashSet<PathBuf>>`
+parameter. Present → the same "skip non-visible, ignore
+`is_expanded`" rule applies there too, giving visually identical
+output to the `visible_rows` walker.
+
+Search is case-insensitive basename-substring match. The
+lowercased query is cached on `SearchState` at construction time
+(`query_lower`), so per-node match checks don't re-lowercase.
+Haystack is the node's `path.file_name()` (lowercased on demand
+inside `matches_query`, which is O(basename_len) per node per
+recompute — negligible for realistic trees).
+
+Design constraints the implementation settled:
+
+- **Already-loaded nodes only.** Typing doesn't spawn I/O. Apps
+  that need broad coverage combine search with
+  `with_prefetch_limit(N)`.
+- **Sees through collapsed-but-loaded subtrees.** The walker
+  descends regardless of `is_expanded`. Ancestors of matches
+  force-render even when collapsed.
+- **Selection is orthogonal.** `selected_paths` is untouched by
+  search; per-node `is_selected` flags are preserved even on
+  hidden rows.
+- **Setter, not event.** `set_search_query(..)` is a plain
+  mutator, matching `set_filter(..)` style. No new
+  `DirectoryTreeEvent` variant. Apps wire their own
+  `text_input::on_input` handler.
+- **Empty query clears.** Two-state machine (`None` / `Some(...)`)
+  avoids a "searching-for-nothing" pseudo-state.
+- **Click-during-search doesn't escape.** The widget stays
+  narrowed. Documented limitation; a future opt-in escape mode is
+  possible but not default.

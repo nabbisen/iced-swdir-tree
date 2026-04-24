@@ -96,7 +96,7 @@ impl DirectoryTree {
     /// case the caller falls back to `Replace` semantics.
     fn compute_visible_range(&self, target: &std::path::Path) -> Option<Vec<std::path::PathBuf>> {
         let anchor = self.anchor_path.as_deref()?;
-        let rows = self.root.visible_rows();
+        let rows = self.visible_rows();
         let a_idx = rows.iter().position(|r| r.node.path == anchor)?;
         let t_idx = rows.iter().position(|r| r.node.path == target)?;
         let (lo, hi) = if a_idx <= t_idx {

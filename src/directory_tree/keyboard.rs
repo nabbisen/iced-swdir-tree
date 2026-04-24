@@ -96,7 +96,7 @@ impl DirectoryTree {
         // Precompute the flat list of visible rows — the same
         // ordering the view uses. Most bindings need to know
         // "where am I in this list" and "what's next / previous".
-        let rows = self.root.visible_rows();
+        let rows = self.visible_rows();
 
         match named {
             Named::ArrowDown => self.move_selection(&rows, Direction::Next, nav_mode),

@@ -56,7 +56,18 @@ impl DirectoryTree {
         // Snapshot the current drop target so each row can paint its
         // own highlight if it matches.
         let drop_target = self.drop_target();
-        render_node(&self.root, 0, drop_target, on_event, &mut rows);
+        // v0.6: if a search is active, hand render_node the set of
+        // visible paths so it can bypass `is_expanded` — a collapsed
+        // ancestor of a match should render as if expanded.
+        let search_visible = self.search.as_ref().map(|s| &s.visible_paths);
+        render_node(
+            &self.root,
+            0,
+            drop_target,
+            search_visible,
+            on_event,
+            &mut rows,
+        );
 
         let list = column(rows).spacing(2).padding(4).width(Length::Fill);
 
@@ -68,22 +79,43 @@ impl DirectoryTree {
 }
 
 /// Render a single node and its descendants (if expanded) into `out`.
+///
+/// When `search_visible` is `Some`, search is active: only paths
+/// in that set are rendered, and descent into children happens
+/// regardless of `is_expanded`. When `search_visible` is `None`,
+/// the normal `is_expanded && is_loaded` descent rule applies.
 fn render_node<'a, Message, F>(
     node: &'a TreeNode,
     depth: u32,
     drop_target: Option<&Path>,
+    search_visible: Option<&std::collections::HashSet<std::path::PathBuf>>,
     on_event: F,
     out: &mut Vec<Element<'a, Message>>,
 ) where
     Message: Clone + 'a,
     F: Fn(DirectoryTreeEvent) -> Message + Copy + 'a,
 {
+    // v0.6 search: skip nodes outside the visible set entirely.
+    if let Some(visible) = search_visible
+        && !visible.contains(&node.path)
+    {
+        return;
+    }
     let is_drop_target = drop_target == Some(node.path.as_path());
     out.push(render_row(node, depth, is_drop_target, on_event));
 
-    if node.is_dir && node.is_expanded && node.is_loaded {
+    // Descent rule:
+    //   - Search active: always descend (children are gated by the
+    //     `visible` check above, so we correctly skip non-match
+    //     siblings while still reaching deeper matches).
+    //   - Search inactive: normal is_expanded && is_loaded rule.
+    let descend = match search_visible {
+        Some(_) => node.is_dir,
+        None => node.is_dir && node.is_expanded && node.is_loaded,
+    };
+    if descend {
         for child in &node.children {
-            render_node(child, depth + 1, drop_target, on_event, out);
+            render_node(child, depth + 1, drop_target, search_visible, on_event, out);
         }
     }
 }

@@ -5,6 +5,86 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] — 2026-04-24
+
+Delivers the v1.0-required roadmap item: **incremental search
+with real-time filtering**. Apps that host a `DirectoryTree` can
+now wire a `text_input` directly into the widget via
+`tree.set_search_query(...)`: as the user types, rows whose
+basenames don't match are hidden, but their ancestors stay
+visible so the match's tree context is preserved.
+
+### Added
+
+- **`DirectoryTree::set_search_query(impl Into<String>)`** — the
+  primary entry point. Case-insensitive substring match on each
+  node's basename. Passing `""` is equivalent to `clear_search()`.
+- **`DirectoryTree::clear_search()`** — drop the active query.
+- **`DirectoryTree::search_query() -> Option<&str>`** — the
+  current query as the app set it (original casing preserved for
+  status-bar display).
+- **`DirectoryTree::is_searching() -> bool`** — convenience
+  accessor.
+- **`DirectoryTree::search_match_count() -> usize`** — count of
+  direct matches (ancestor-breadcrumb rows are not counted), for
+  apps that want to show "N matches".
+- **New `examples/search.rs`** demonstrating text-input + tree +
+  status bar + expand-all button pattern.
+- **6 new unit tests** in `src/directory_tree/search/tests.rs`
+  covering the `matches_query` primitive (empty / basename
+  substring / case-insensitivity / path-components-don't-match /
+  no-match / query-longer-than-basename).
+- **9 new integration tests** in `tests/search.rs` against real
+  filesystem fixtures — inactive-by-default, multi-subtree
+  matching, empty-clears, clear-restores, case-insensitive,
+  selection-preservation, filter-change-re-runs, sees-through-
+  collapsed-loaded-subtree, on-loaded-recomputes.
+
+### Changed — internals
+
+- **`TreeNode::visible_rows` gets a wrapper on `DirectoryTree`.**
+  `DirectoryTree::visible_rows()` now dispatches: no search → old
+  `is_expanded`-respecting walker; search active → new walker
+  that consults the cached `SearchState::visible_paths` set
+  instead (so ancestors-of-matches render regardless of
+  `is_expanded`). Both keyboard nav and view rendering now go
+  through this wrapper, so search-mode is consistent everywhere.
+- **`view::render_node` signature** gained a
+  `search_visible: Option<&HashSet<PathBuf>>` parameter. When
+  present, the recursion skips non-visible nodes and ignores
+  `is_expanded`.
+- **`on_loaded` and `set_filter`** now trigger
+  `recompute_search_visibility()` so newly-loaded children
+  auto-appear in active searches and filter flips re-run the
+  match set without the app re-issuing `set_search_query`.
+
+### Semantics decisions (documented)
+
+- **Already-loaded nodes only.** Search never triggers new
+  filesystem scans. Apps that want broad coverage should combine
+  search with the v0.5 `with_prefetch_limit(N)` option.
+- **Sees through collapse.** A loaded-but-collapsed folder still
+  contributes its matches; the ancestor chain is force-rendered.
+- **Selection is orthogonal.** Selected rows hidden by a search
+  stay selected and reappear when the search clears.
+- **No auto-expand on click during search.** Clicking to expand a
+  folder while a search is active does not escape the filter —
+  the view stays narrowed to matches-and-ancestors. Clearing the
+  query first is the documented way to "explore outside current
+  results". A future 0.6.x patch can add an opt-in escape if
+  demand materializes.
+- **Empty string clears search** (two-state machine, not three).
+
+### Breaking changes
+
+None on the public API. `TreeConfig` is unchanged. New methods
+only.
+
+### Test counts
+
+- **128 total** (was 113): 73 unit + 54 integration + 1 doctest.
+  Added 6 unit and 9 integration tests for search.
+
 ## [0.5.0] — 2026-04-24
 
 Delivers the third v1.0-required roadmap item: **parallel

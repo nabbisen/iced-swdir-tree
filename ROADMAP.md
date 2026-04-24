@@ -51,14 +51,16 @@ instant. One level deep only (no cascade). Respects `max_depth`.
 `0` (default) disables prefetch entirely and preserves v0.4
 behaviour exactly.
 
-## Remaining for v1.0
+### v0.6.0 — Incremental search with real-time filtering ✅
+See [CHANGELOG](CHANGELOG.md#060--2026-04-24). Apps call
+`tree.set_search_query(...)` and the widget narrows rendering to
+rows whose basenames match (case-insensitive substring) plus
+every ancestor of every match. Selection survives search. New
+`examples/search.rs`. One known limitation documented:
+click-to-expand during search does not escape the filter;
+clear the query first to explore.
 
-### v0.6.0 — Incremental search with real-time filtering
-A text-input filter on top of the tree: as the user types, rows
-whose path doesn't match are hidden, but their ancestors stay
-visible so the match's context is preserved. Reuses the v0.2
-filter-rebuild machinery so selection and expansion state survive
-the type-ahead.
+## Remaining for v1.0
 
 ### v0.7.0 — Custom icon themes via a trait
 Swap `lucide-icons` for another icon set (material, heroicons, app-
@@ -79,3 +81,8 @@ dependency.
 - Context-menu hooks (`on_right_click`-style events).
 - Deeper prefetch cascade (configurable depth, global concurrency
   cap) — can land as a 0.5.x patch if demand materializes.
+- Pluggable search matcher trait (regex / glob / fuzzy / full-path
+  mode) — can land as a 0.6.x patch. The v0.6 defaults cover the
+  common case; a trait seam would let apps opt into more.
+- Opt-in "click-to-escape-search" behaviour for tree exploration
+  while search is active — also a 0.6.x candidate.

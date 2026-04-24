@@ -87,6 +87,12 @@ impl DirectoryTree {
         // stay consistent with what `selected_paths()` returns.
         self.sync_selection_flags();
 
+        // v0.6: if a search query is active, newly-loaded children
+        // might contain matches (or new ancestor-chains for
+        // existing matches). Re-run the visibility pass over the
+        // updated node graph.
+        self.recompute_search_visibility();
+
         // v0.5: prefetch. If THIS load was itself triggered by a
         // prefetch (path is in `prefetching_paths`), we mark it
         // drained and return empty — we do NOT cascade into another

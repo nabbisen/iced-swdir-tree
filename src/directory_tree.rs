@@ -14,6 +14,7 @@ pub(crate) mod icon;
 pub(crate) mod keyboard;
 pub(crate) mod message;
 pub(crate) mod node;
+pub(crate) mod search;
 pub(crate) mod selection;
 pub(crate) mod update;
 pub(crate) mod view;
@@ -114,6 +115,19 @@ pub struct DirectoryTree {
     /// the eventual user-initiated result triggers its own prefetch
     /// wave normally.
     pub(crate) prefetching_paths: std::collections::HashSet<std::path::PathBuf>,
+    /// **v0.6:** incremental-search state.
+    ///
+    /// `None` when search is inactive (the default). When the app
+    /// calls [`DirectoryTree::set_search_query`] with a non-empty
+    /// query, this is populated with the query plus a cached set
+    /// of visible-under-search paths.
+    ///
+    /// The rest of the widget — rendering, keyboard nav — consults
+    /// this state automatically through [`TreeNode::visible_rows`].
+    /// See the [`search`] module docs for the full contract.
+    ///
+    /// [`DirectoryTree::set_search_query`]: Self::set_search_query
+    pub(crate) search: Option<search::SearchState>,
     /// Pluggable executor that runs blocking `scan_dir` calls.
     ///
     /// Defaults to [`ThreadExecutor`] (one `std::thread::spawn` per
@@ -149,6 +163,7 @@ impl DirectoryTree {
             anchor_path: None,
             drag: None,
             prefetching_paths: std::collections::HashSet::new(),
+            search: None,
             executor: Arc::new(ThreadExecutor),
         }
     }
@@ -263,6 +278,12 @@ impl DirectoryTree {
         // need re-syncing after any mutation that drops and recreates
         // nodes.
         self.sync_selection_flags();
+        // v0.6: if a search query is active, re-run it against the
+        // post-filter node graph. A node that was a match may have
+        // been filtered out (e.g. switching to FoldersOnly while
+        // searching "readme.md"), or a newly-visible node may now
+        // match.
+        self.recompute_search_visibility();
     }
 
     /// Return the root path.
@@ -351,6 +372,207 @@ impl DirectoryTree {
         self.drag.as_ref().map_or(&[], |d| d.sources.as_slice())
     }
 
+    /// **v0.6:** set or update the incremental search query.
+    ///
+    /// Apps typically call this from their `TextInput`'s `on_input`
+    /// callback. The widget narrows its visible rows to those
+    /// whose **basename matches the query as a case-insensitive
+    /// substring** — plus every ancestor of every match, so the
+    /// user sees the tree context leading to their matches.
+    ///
+    /// ```ignore
+    /// // In your update handler:
+    /// Message::SearchChanged(q) => {
+    ///     self.tree.set_search_query(q);
+    ///     Task::none()
+    /// }
+    /// ```
+    ///
+    /// An **empty string clears the search** — equivalent to
+    /// [`clear_search`](Self::clear_search). This is a deliberate
+    /// simplification: having three states (none / empty-string /
+    /// non-empty-string) tends to produce surprising UI where
+    /// clearing the text box leaves the widget in a visually
+    /// identical-but-semantically-distinct "searching for
+    /// nothing" mode. With this contract there are only two
+    /// states.
+    ///
+    /// Search operates on **already-loaded nodes only**. Matches
+    /// inside unloaded folders don't appear until the folder
+    /// loads (by user expansion or v0.5 prefetch). It does descend
+    /// into loaded-but-collapsed folders, though — collapsed
+    /// state doesn't hide content from search.
+    ///
+    /// Selection (including multi-selection) is **orthogonal** to
+    /// search and is fully preserved: a selected row hidden by
+    /// the query stays selected, and reappears when the query
+    /// clears.
+    ///
+    /// See the crate-internal `search` module for the full contract
+    /// (visible in the source tree at `src/directory_tree/search.rs`).
+    pub fn set_search_query(&mut self, query: impl Into<String>) {
+        let q: String = query.into();
+        if q.is_empty() {
+            self.search = None;
+            return;
+        }
+        self.search = Some(search::SearchState::new(q));
+        self.recompute_search_visibility();
+    }
+
+    /// Clear the active search query, if any. No-op if there is no
+    /// active search.
+    ///
+    /// After this call [`is_searching`](Self::is_searching) returns
+    /// `false`, [`search_query`](Self::search_query) returns
+    /// `None`, and the widget returns to its normal view where
+    /// rows are hidden only by `is_expanded` chain (plus the
+    /// ordinary [`DirectoryFilter`]).
+    ///
+    /// [`DirectoryFilter`]: crate::DirectoryFilter
+    pub fn clear_search(&mut self) {
+        self.search = None;
+    }
+
+    /// The current search query as the application set it
+    /// (preserving the app's original case), or `None` when search
+    /// is inactive.
+    pub fn search_query(&self) -> Option<&str> {
+        self.search.as_ref().map(|s| s.query.as_str())
+    }
+
+    /// `true` iff a search query is currently active.
+    ///
+    /// Convenience wrapper around [`search_query`](Self::search_query);
+    /// apps can use either depending on taste.
+    pub fn is_searching(&self) -> bool {
+        self.search.is_some()
+    }
+
+    /// Count of nodes that directly match the current search query.
+    ///
+    /// Returns `0` when no search is active. This is distinct from
+    /// "visible rows" — the visible set also includes ancestor
+    /// breadcrumbs leading down to matches, which are typically
+    /// not what the user wants counted in their UI's "X results"
+    /// display.
+    pub fn search_match_count(&self) -> usize {
+        self.search.as_ref().map_or(0, |s| s.match_count)
+    }
+
+    /// Recompute the cached set of visible-under-search paths.
+    ///
+    /// Walks every loaded node in the tree (ignoring `is_expanded`,
+    /// since search should find matches even inside collapsed-but-
+    /// loaded subtrees). Any node whose basename matches the
+    /// current query is a "match" — its path is added to
+    /// `visible_paths`, all its proper ancestors are added as
+    /// breadcrumbs, and the `match_count` is incremented.
+    ///
+    /// Called automatically on [`set_search_query`](Self::set_search_query),
+    /// [`set_filter`](Self::set_filter), and after every scan
+    /// merge in `on_loaded`. Applications don't need to call it
+    /// manually.
+    pub(crate) fn recompute_search_visibility(&mut self) {
+        let Some(state) = self.search.as_mut() else {
+            return;
+        };
+        let mut visible: std::collections::HashSet<std::path::PathBuf> =
+            std::collections::HashSet::new();
+        let mut match_count: usize = 0;
+        let _ = walk_for_search(
+            &self.root,
+            &state.query_lower,
+            &mut visible,
+            &mut match_count,
+        );
+        state.visible_paths = visible;
+        state.match_count = match_count;
+    }
+
+    /// Search-aware version of [`TreeNode::visible_rows`](crate::directory_tree::node::TreeNode::visible_rows).
+    ///
+    /// When no search is active, this delegates directly to the
+    /// node-level walker (which respects `is_expanded`).
+    ///
+    /// When a search is active, this walks the tree using the
+    /// cached [`SearchState::visible_paths`](crate::directory_tree::search::SearchState)
+    /// set instead of `is_expanded` — yielding only matches and
+    /// their ancestors, and descending into collapsed subtrees when
+    /// they contain matches. Indent depth is preserved so the view
+    /// still renders nested rows correctly.
+    pub(crate) fn visible_rows(&self) -> Vec<node::VisibleRow<'_>> {
+        match &self.search {
+            None => self.root.visible_rows(),
+            Some(state) => {
+                let mut out = Vec::new();
+                collect_search_visible(&self.root, 0, &state.visible_paths, &mut out);
+                out
+            }
+        }
+    }
+}
+
+/// Search-mode equivalent of
+/// [`node::collect_visible`](crate::directory_tree::node): walk the
+/// tree, yielding rows for nodes in `visible` and descending into
+/// them regardless of `is_expanded`.
+fn collect_search_visible<'a>(
+    node: &'a TreeNode,
+    depth: u32,
+    visible: &std::collections::HashSet<std::path::PathBuf>,
+    out: &mut Vec<node::VisibleRow<'a>>,
+) {
+    if !visible.contains(&node.path) {
+        return;
+    }
+    out.push(node::VisibleRow { node, depth });
+    // Always descend when search is active — ancestors-of-matches
+    // force children to render even if `is_expanded == false`.
+    // Non-matching siblings are filtered out by the visible check
+    // at the top of this function.
+    for child in &node.children {
+        collect_search_visible(child, depth + 1, visible, out);
+    }
+}
+
+/// Walk `node` and every loaded descendant, collecting matches and
+/// their ancestors into `visible`.
+///
+/// Returns `true` iff the subtree rooted at `node` contains at
+/// least one match (including `node` itself). The caller uses
+/// that signal to decide whether to add `node`'s own path as an
+/// ancestor-breadcrumb — which is the only reason we'd want `node`
+/// visible if it isn't itself a match.
+///
+/// Crucially, this walks **regardless of `is_expanded`**: search
+/// sees through collapse. Folders that have been loaded once but
+/// are currently collapsed still contribute their matches.
+fn walk_for_search(
+    node: &TreeNode,
+    query_lower: &str,
+    visible: &mut std::collections::HashSet<std::path::PathBuf>,
+    match_count: &mut usize,
+) -> bool {
+    let mut subtree_has_match = false;
+    for child in &node.children {
+        if walk_for_search(child, query_lower, visible, match_count) {
+            subtree_has_match = true;
+        }
+    }
+    let self_matches = search::matches_query(&node.path, query_lower);
+    if self_matches {
+        *match_count += 1;
+    }
+    if self_matches || subtree_has_match {
+        visible.insert(node.path.clone());
+        true
+    } else {
+        false
+    }
+}
+
+impl DirectoryTree {
     /// Re-apply [`DirectoryTree::selected_paths`] to the per-node
     /// `is_selected` flags used by the view.
     ///

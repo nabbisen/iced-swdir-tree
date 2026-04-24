@@ -1,6 +1,6 @@
 [package]
 name = "iced-swdir-tree"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 description = "iced widget for file tree powered by swdir, supporting selection, lazy loading and filtering."
 authors = ["nabbisen <nabbisen@scqr.net>"]
@@ -47,6 +47,10 @@ path = "examples/multi_select.rs"
 [[example]]
 name = "drag_drop"
 path = "examples/drag_drop.rs"
+
+[[example]]
+name = "search"
+path = "examples/search.rs"
 
 [package.metadata.docs.rs]
 all-features = true
