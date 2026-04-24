@@ -55,5 +55,5 @@ tree.clear_search();             // drop the query
 Clicking a folder during search does **not** escape the filter.
 The view stays narrowed to matches plus ancestors. To explore
 outside the match set, clear the search first. See
-[`examples/search.rs`](../examples/search.rs) for a complete
+[`examples/search.rs`](../../examples/search.rs) for a complete
 working app with text-input, counter, and expand-all button.

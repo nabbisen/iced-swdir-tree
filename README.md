@@ -104,7 +104,7 @@ Working apps live in [`examples/`](examples/): `keyboard_nav`,
 
 - **Lazy, async, cache-backed.** Only the root is eagerly
   created. Each expansion dispatches a scan through a pluggable
-  [`ScanExecutor`](docs/executor.md) and merges the result back
+  [`ScanExecutor`](docs/guide/custom-executor.md) and merges the result back
   into a generation-tagged cache. Filter changes and search
   re-derive from the cache — no re-scan.
 - **Every feature is orthogonal.** Selection survives filter
@@ -120,18 +120,23 @@ Working apps live in [`examples/`](examples/): `keyboard_nav`,
   (`with_prefetch_limit`) won't enter `.git`, `node_modules`,
   `target`, or other common "don't scan this" directories out
   of the box; the skip list is
-  [configurable](docs/prefetch.md#safety-valve-the-skip-list).
+  [configurable](docs/guide/prefetch.md#safety-valve-the-skip-list).
   `max_depth` caps recursion. Generation tags drop stale scan
   results that returned after a collapse.
 
 ## Documentation
 
-**📚 Full reference in [docs/](docs/)** — covers every topic
-linked below with concrete code.
+**📚 Full reference in [docs/](docs/)**, organized by intent:
 
-- [Features](docs/features.md) · [Configuration](docs/configuration.md) · [Events](docs/events.md)
-- [Multi-select](docs/multi-select.md) · [Drag-and-drop](docs/drag-and-drop.md) · [Keyboard navigation](docs/keyboard.md)
-- [Parallel pre-expansion](docs/prefetch.md) · [Incremental search](docs/search.md) · [Custom scan executor](docs/executor.md)
-- [Architecture](docs/ARCHITECTURE.md) · [Development & testing](docs/DEVELOPMENT.md)
-- [CHANGELOG](CHANGELOG.md) · [ROADMAP](ROADMAP.md)
-
+- **Guide** (build something) — [Configuration](docs/guide/configuration.md)
+  · [Multi-select](docs/guide/multi-select.md)
+  · [Drag-and-drop](docs/guide/drag-and-drop.md)
+  · [Keyboard navigation](docs/guide/keyboard-navigation.md)
+  · [Incremental search](docs/guide/incremental-search.md)
+  · [Parallel pre-expansion](docs/guide/prefetch.md)
+  · [Custom scan executor](docs/guide/custom-executor.md)
+- **Reference** (look something up) — [Features](docs/reference/features.md)
+  · [Events](docs/reference/events.md)
+- **Internals** (understand or contribute) — [Architecture](docs/internals/architecture.md)
+  · [Development & testing](docs/internals/development.md)
+- **Release notes** — [CHANGELOG](CHANGELOG.md) · [ROADMAP](ROADMAP.md)

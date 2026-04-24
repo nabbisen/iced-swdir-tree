@@ -5,6 +5,86 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.3] — 2026-04-24
+
+**Documentation reorganization. No code changes, no test changes.**
+
+### Rationale
+
+The v0.6.2 release split `README.md` into a `docs/` folder with
+12 flat files and mixed filename casing (`ARCHITECTURE.md` /
+`DEVELOPMENT.md` vs `configuration.md`). Flat is fine for a
+half-dozen files, but twelve at one depth makes "what do I read
+first?" hard to answer. This release groups pages by reader
+intent and unifies naming.
+
+### Changed — `docs/` now has three subfolders
+
+Task-oriented split by what the reader is trying to do:
+
+- **`docs/guide/`** — *"I want to build something."* Pages you
+  copy code from.
+  - `configuration.md`, `multi-select.md`, `drag-and-drop.md`,
+    `keyboard-navigation.md`, `incremental-search.md`,
+    `prefetch.md`, `custom-executor.md`.
+- **`docs/reference/`** — *"I want to look up a fact."* Short
+  pages; once you've scanned them, you're done.
+  - `features.md`, `events.md`.
+- **`docs/internals/`** — *"I want to understand how this works,
+  or contribute."* For maintainers and curious readers.
+  - `architecture.md`, `development.md`.
+
+`docs/README.md` is unchanged in role — GitHub auto-renders it
+when you navigate into the folder — but it now acts as an index
+grouped by the three buckets above, each with one-line
+descriptions.
+
+### Renamed files
+
+Lowercase-kebab-case throughout, and a couple of clearer names:
+
+| Before                | After                                    |
+| ---                   | ---                                      |
+| `docs/ARCHITECTURE.md` | `docs/internals/architecture.md`        |
+| `docs/DEVELOPMENT.md`  | `docs/internals/development.md`         |
+| `docs/configuration.md`| `docs/guide/configuration.md`           |
+| `docs/multi-select.md` | `docs/guide/multi-select.md`            |
+| `docs/drag-and-drop.md`| `docs/guide/drag-and-drop.md`           |
+| `docs/keyboard.md`     | `docs/guide/keyboard-navigation.md`     |
+| `docs/search.md`       | `docs/guide/incremental-search.md`      |
+| `docs/prefetch.md`     | `docs/guide/prefetch.md`                |
+| `docs/executor.md`     | `docs/guide/custom-executor.md`         |
+| `docs/features.md`     | `docs/reference/features.md`            |
+| `docs/events.md`       | `docs/reference/events.md`              |
+
+### Link maintenance
+
+Every relative link inside `docs/` and the top-level `README.md`
+was rewritten to match the new hierarchy. A link-checker script
+confirmed no broken references remain across the entire
+documentation set before release.
+
+### Design decisions
+
+- **Three buckets, not four.** The Diátaxis framework (tutorial
+  / how-to / reference / explanation) would over-fit a 12-file
+  crate; the three-way split maps to actual reader audiences.
+- **Descriptive filenames.** `executor.md` became
+  `custom-executor.md` so the topic is clear at a glance;
+  `keyboard.md` became `keyboard-navigation.md` to match the
+  page's own heading.
+- **`features.md` is reference, not guide.** Its bullets are a
+  scan-once feature list. Each bullet links to the `guide/`
+  page for implementation details.
+- **`events.md` is reference.** Short enum description, not a
+  how-to.
+
+### Not changed
+
+- **Public API is byte-identical to 0.6.2.** No new types, no
+  renamed methods, no behaviour changes.
+- **Tests unchanged.** Still 141 tests, still all green.
+
 ## [0.6.2] — 2026-04-24
 
 **Documentation restructure. No code changes, no test changes.**

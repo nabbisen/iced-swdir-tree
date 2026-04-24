@@ -1,20 +1,49 @@
 # Roadmap
 
-All five items below are **required for v1.0** and are listed in
-implementation order. Each lands as a discrete minor-version release
-so downstream apps can upgrade one feature at a time.
+Current: **v0.6.3** · Next: **v0.7.0** · **v1.0 is one release away.**
 
-## Shipped
+Six feature milestones ship as minor-version releases; patch
+releases handle internal refactors and documentation. Each minor
+lands as a discrete release so downstream apps can upgrade one
+feature at a time.
 
-### v0.2.0 — per-path selection, keyboard nav, pluggable executor
-- Per-path selection tracking so filter changes preserve selection.
-- Keyboard navigation (arrow keys, `Enter` to toggle, `Space` to
-  re-emit — later changed to toggle in v0.3).
-- Pluggable `ScanExecutor` so apps with their own blocking-task
-  pool (`tokio`, `smol`, `rayon`, ...) skip the per-expansion
-  `std::thread::spawn`.
+## Status at a glance
 
-### v0.3.0 — Multi-select (Shift/Ctrl-click) ✅
+| Version  | Status    | Theme                                                      |
+| ---      | ---       | ---                                                        |
+| `0.1.0`  | ✅ shipped | Initial release — basic tree, lazy loading, three filters. |
+| `0.2.0`  | ✅ shipped | Per-path selection, keyboard nav, pluggable executor.      |
+| `0.3.0`  | ✅ shipped | Multi-select (Shift/Ctrl-click, range extension).          |
+| `0.4.0`  | ✅ shipped | Drag-and-drop between nodes.                               |
+| `0.5.0`  | ✅ shipped | Parallel pre-expansion (`with_prefetch_limit`).            |
+| `0.6.0`  | ✅ shipped | Incremental search with real-time filtering.              |
+| `0.6.1`  | ✅ shipped | Prefetch safety valve (`.git` / `node_modules` / …).       |
+| `0.7.0`  | 🚧 planned | Custom icon themes via an `IconTheme` trait.               |
+| `1.0.0`  | 🎯 goal    | Stable public API; no roadmap changes before or during.    |
+
+Patch releases on the way (internal refactors, docs): `0.4.1`,
+`0.4.2`, `0.6.2`, `0.6.3`. Summaries below.
+
+---
+
+## Shipped — feature releases
+
+### v0.1.0 — Initial release ✅
+The baseline: a lazy-loading directory tree with three
+`DirectoryFilter` modes, Unicode-symbol icons by default with
+an `icons` feature flag for real lucide glyphs, per-scan
+generation tags to drop stale results after collapse/re-expand,
+and the `async` scan path that keeps the UI thread unblocked.
+
+### v0.2.0 — Per-path selection, keyboard nav, pluggable executor ✅
+Added per-path selection tracking so filter changes preserve
+the current selection; keyboard navigation (arrow keys,
+`Home` / `End`, `Enter`, `Space`); and the `ScanExecutor` trait
+so apps with their own blocking-task pool (`tokio`, `smol`,
+`rayon`, …) can skip the per-expansion `std::thread::spawn`
+default.
+
+### v0.3.0 — Multi-select ✅
 See [CHANGELOG](CHANGELOG.md#030--2026-04-23). Adds
 `SelectionMode::{Replace, Toggle, ExtendRange}`, three new
 accessors on `DirectoryTree`, Shift-arrow and Space-toggle
@@ -25,81 +54,142 @@ See [CHANGELOG](CHANGELOG.md#040--2026-04-24). Adds the `Drag`
 and `DragCompleted` event variants, a `DragMsg` state-machine
 enum, drop-target highlighting in the built-in view, multi-item
 drag that preserves the current selection during the gesture,
-deferred-selection so clicks on multi-selected rows don't collapse
-the set, an Escape-to-cancel keybind, and the `drag_drop` example
-that performs `fs::rename` on drop.
+deferred-selection so clicks on multi-selected rows don't
+collapse the set, an Escape-to-cancel keybind, and the
+`drag_drop` example that performs `fs::rename` on drop.
 
-### v0.4.1 — Internal refactor ✅
-See [CHANGELOG](CHANGELOG.md#041--2026-04-24). Pure file-layout
-refactor: seven inline `#[cfg(test)] mod tests { ... }` blocks
-moved to sibling `<module>/tests.rs` files, and `update.rs` split
-into a thin dispatcher plus four per-event handler submodules.
-No behaviour or API changes.
-
-### v0.4.2 — Test-layout refactor ✅
-See [CHANGELOG](CHANGELOG.md#042--2026-04-24). Pure `tests/`
-reorganization: the two large integration binaries split into 12
-themed files plus a shared `tests/common/mod.rs` helper. Same
-100 tests, same names, same behaviour; smaller files.
-
-### v0.5.0 — Parallel pre-expansion of visible descendants ✅
+### v0.5.0 — Parallel pre-expansion ✅
 See [CHANGELOG](CHANGELOG.md#050--2026-04-24). Opt-in via
 `DirectoryTree::with_prefetch_limit(N)`: when a user expands a
-folder, the widget speculatively issues parallel scans for up to
-`N` of its folder-children so clicking any of them becomes
-instant. One level deep only (no cascade). Respects `max_depth`.
-`0` (default) disables prefetch entirely and preserves v0.4
-behaviour exactly.
+folder, the widget speculatively issues parallel scans for up
+to `N` of its folder-children so clicking any of them becomes
+instant. One level deep only (no cascade). Respects
+`max_depth`. `0` (default) disables prefetch entirely and
+preserves v0.4 behaviour exactly.
 
-### v0.6.0 — Incremental search with real-time filtering ✅
+### v0.6.0 — Incremental search ✅
 See [CHANGELOG](CHANGELOG.md#060--2026-04-24). Apps call
-`tree.set_search_query(...)` and the widget narrows rendering to
-rows whose basenames match (case-insensitive substring) plus
+`tree.set_search_query(...)` and the widget narrows rendering
+to rows whose basenames match (case-insensitive substring) plus
 every ancestor of every match. Selection survives search. New
 `examples/search.rs`. One known limitation documented:
-click-to-expand during search does not escape the filter;
-clear the query first to explore.
+click-to-expand during search does not escape the filter; clear
+the query first to explore.
+
+## Shipped — safety patches
 
 ### v0.6.1 — Prefetch safety valve ✅
-See [CHANGELOG](CHANGELOG.md#061--2026-04-24). The v0.5 prefetch
-machinery now refuses to speculatively scan directories whose
-basenames appear in a configurable skip list. Default covers
-`.git`, `.hg`, `.svn`, `node_modules`, `__pycache__`, `.venv`,
-`venv`, `target`, `build`, `dist`. Exact-basename match, ASCII
-case-insensitive. New `with_prefetch_skip(iter)` builder and
-public `DEFAULT_PREFETCH_SKIP` constant. Skip applies only to
+See [CHANGELOG](CHANGELOG.md#061--2026-04-24). The v0.5
+prefetch machinery now refuses to speculatively scan
+directories whose basenames appear in a configurable skip list.
+Default covers `.git`, `.hg`, `.svn`, `node_modules`,
+`__pycache__`, `.venv`, `venv`, `target`, `build`, `dist`.
+Exact-basename match, ASCII case-insensitive. New
+`with_prefetch_skip(iter)` builder and public
+`DEFAULT_PREFETCH_SKIP` constant. Skip applies only to
 prefetch — explicit user clicks still expand any folder.
 
-### v0.6.2 — Documentation restructure ✅
-See [CHANGELOG](CHANGELOG.md#062--2026-04-24). Pure
-documentation release. `README.md` shrank from ~500 to ~140
-lines; 10 topic pages live under `docs/`; `ARCHITECTURE.md` and
-`DEVELOPMENT.md` moved to `docs/`. No code or test changes,
-public API byte-identical.
+## Shipped — tooling and documentation
+
+### v0.4.1 — Internal source-layout refactor
+See [CHANGELOG](CHANGELOG.md#041--2026-04-24). Seven inline
+`#[cfg(test)] mod tests { ... }` blocks moved to sibling
+`<module>/tests.rs` files; `update.rs` split into a thin
+dispatcher plus four per-event handler submodules. No behaviour
+or API changes.
+
+### v0.4.2 — Test-layout refactor
+See [CHANGELOG](CHANGELOG.md#042--2026-04-24). Two large
+integration binaries split into 12 themed files plus a shared
+`tests/common/mod.rs` helper. Same 100 tests, same names, same
+behaviour.
+
+### v0.6.2 — Documentation restructure
+See [CHANGELOG](CHANGELOG.md#062--2026-04-24). `README.md`
+shrank from ~500 to ~140 lines; 10 topic pages moved under
+`docs/`; `ARCHITECTURE.md` and `DEVELOPMENT.md` relocated into
+`docs/`.
+
+### v0.6.3 — Documentation reorganization
+See [CHANGELOG](CHANGELOG.md#063--2026-04-24). `docs/` now
+organized by reader intent into three subfolders — `guide/`
+(task-oriented), `reference/` (lookup), `internals/`
+(architecture + dev). All filenames unified to
+lowercase-kebab-case; two renamed for clarity (`executor.md` →
+`custom-executor.md`, `keyboard.md` →
+`keyboard-navigation.md`).
+
+---
 
 ## Remaining for v1.0
 
-### v0.7.0 — Custom icon themes via a trait
-Swap `lucide-icons` for another icon set (material, heroicons, app-
-specific glyphs) via an `IconTheme` trait that returns the glyph
-(and optional font) for each logical icon role (`folder-closed`,
-`folder-open`, `file`, `symlink`, `error`). Keeps the `icons`
-feature flag as a convenient default but removes the hard-coded
-dependency.
+### v0.7.0 — Custom icon themes via a trait 🚧
+The one outstanding feature before v1.0. Today the widget's
+icons are hard-coded to lucide glyphs (or Unicode fallbacks
+when the `icons` feature is off). v0.7 introduces an
+`IconTheme` trait returning a glyph (and optional font) for
+each logical role:
+
+```rust,ignore
+pub trait IconTheme {
+    fn glyph(&self, role: IconRole) -> IconSpec;
+}
+
+pub enum IconRole {
+    FolderClosed,
+    FolderOpen,
+    File,
+    Symlink,
+    Error,
+}
+```
+
+Keeps the `icons` feature flag as a convenient
+`LucideTheme`-preset default, but removes the hard-coded
+dependency so apps can plug in Material, Heroicons, or their
+own custom glyphs. Post-0.7 the `icons` feature's purpose
+shrinks to "ship the lucide TTF + preset"; consumers that
+bring their own theme can turn it off.
+
+After v0.7 ships, the API surface is frozen for v1.0.
+
+---
+
+## Under consideration for 0.6.x / 0.7.x patches
+
+Candidates for landing before v1.0 if demand materializes, but
+not currently scheduled:
+
+- **Deeper prefetch cascade.** Configurable depth with a global
+  concurrency cap. v0.5 intentionally caps at one level to avoid
+  the `per_parent ^ depth` blow-up; a cascading mode with a
+  bounded task budget would serve apps on fast executors where
+  users drill deep.
+- **Pluggable search matcher trait.** The v0.6 defaults
+  (case-insensitive basename substring) cover the common case.
+  A trait seam would let apps opt into regex, glob, fuzzy, or
+  full-path modes without the crate shipping them all.
+- **Opt-in "click-to-escape-search" behaviour.** Today clicking
+  to expand a folder during search stays scoped to the filter.
+  An explicit app-provided setting to let clicks temporarily
+  widen the view would serve some browse-during-search
+  workflows.
+
+---
 
 ## After v1.0
 
-- View-layer virtualization — iced's `Scrollable` is fine through
-  tens of thousands of rows; beyond that, a custom low-level widget
-  that renders only on-screen rows would pay off.
-- Per-node badge / decorator API — a trait app developers can
-  implement to add e.g. git-status dots, file-size labels, or
-  last-modified timestamps.
-- Context-menu hooks (`on_right_click`-style events).
-- Deeper prefetch cascade (configurable depth, global concurrency
-  cap) — can land as a 0.5.x patch if demand materializes.
-- Pluggable search matcher trait (regex / glob / fuzzy / full-path
-  mode) — can land as a 0.6.x patch. The v0.6 defaults cover the
-  common case; a trait seam would let apps opt into more.
-- Opt-in "click-to-escape-search" behaviour for tree exploration
-  while search is active — also a 0.6.x candidate.
+Post-1.0 directions that exceed what a v1.0 API freeze can
+accommodate. These would motivate a v2.0 (or ship as
+non-breaking extensions):
+
+- **View-layer virtualization.** iced's `Scrollable` is fine
+  through tens of thousands of rows; beyond that, a custom
+  low-level widget that renders only on-screen rows would pay
+  off.
+- **Per-node badge / decorator API.** A trait app developers
+  implement to add git-status dots, file-size labels,
+  last-modified timestamps, or arbitrary per-node overlays.
+- **Context-menu hooks.** `on_right_click`-style events so apps
+  can surface their own context menus without reimplementing
+  click-hitbox logic.

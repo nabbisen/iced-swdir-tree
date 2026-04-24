@@ -37,7 +37,7 @@ Message::TreeKey(key, mods) => {
 | `→` | Expand selected directory, or move to first child. |
 | `Esc` | Cancel an in-flight drag (only bound during drag, so apps can still use `Esc` for their own UI otherwise). |
 
-See [`examples/keyboard_nav.rs`](../examples/keyboard_nav.rs) for
+See [`examples/keyboard_nav.rs`](../../examples/keyboard_nav.rs) for
 a single-select navigation demo and
-[`examples/multi_select.rs`](../examples/multi_select.rs) for
+[`examples/multi_select.rs`](../../examples/multi_select.rs) for
 multi-select with Shift/Ctrl-click.

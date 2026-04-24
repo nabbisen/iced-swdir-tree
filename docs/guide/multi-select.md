@@ -45,5 +45,5 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
 }
 ```
 
-See [`examples/multi_select.rs`](../examples/multi_select.rs) for
+See [`examples/multi_select.rs`](../../examples/multi_select.rs) for
 a complete working app with a live selection-count status bar.
