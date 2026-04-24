@@ -60,6 +60,16 @@ every ancestor of every match. Selection survives search. New
 click-to-expand during search does not escape the filter;
 clear the query first to explore.
 
+### v0.6.1 — Prefetch safety valve ✅
+See [CHANGELOG](CHANGELOG.md#061--2026-04-24). The v0.5 prefetch
+machinery now refuses to speculatively scan directories whose
+basenames appear in a configurable skip list. Default covers
+`.git`, `.hg`, `.svn`, `node_modules`, `__pycache__`, `.venv`,
+`venv`, `target`, `build`, `dist`. Exact-basename match, ASCII
+case-insensitive. New `with_prefetch_skip(iter)` builder and
+public `DEFAULT_PREFETCH_SKIP` constant. Skip applies only to
+prefetch — explicit user clicks still expand any folder.
+
 ## Remaining for v1.0
 
 ### v0.7.0 — Custom icon themes via a trait

@@ -161,6 +161,15 @@ path in `prefetching_paths` (or, if it did, `on_toggled` removed
 it before the new scan was issued), so its result produces
 non-empty targets.
 
+**v0.6.1 safety valve.** `select_prefetch_targets` also filters
+out children whose basename appears in `config.prefetch_skip`
+(default: `DEFAULT_PREFETCH_SKIP` — `.git`, `node_modules`,
+`target`, etc.). Match is exact-basename, ASCII case-insensitive
+via `eq_ignore_ascii_case` — no allocation on the hot path.
+The skip check lives in `select_prefetch_targets` alone, so
+`on_toggled` (user-initiated) never consults it: a user click
+still scans a skipped folder normally.
+
 ## Incremental search (v0.6+)
 
 Search is a **view-layer filter**; it doesn't mutate the node

@@ -113,8 +113,15 @@ impl DirectoryTree {
     ///
     /// Returns an empty Vec when prefetch is disabled, when the
     /// parent node is missing from the tree, or when every
-    /// folder-child is already loaded. Respects `config.max_depth`
-    /// by skipping targets that would exceed it.
+    /// folder-child is already loaded. Respects
+    /// `config.max_depth` by skipping targets that would exceed
+    /// it, and **v0.6.1 safety valve**: folders whose basename
+    /// appears in `config.prefetch_skip` (default: `.git`,
+    /// `node_modules`, `target`, etc. — see [`DEFAULT_PREFETCH_SKIP`])
+    /// are excluded as well. The skip list is matched
+    /// exact-basename, ASCII case-insensitive.
+    ///
+    /// [`DEFAULT_PREFETCH_SKIP`]: crate::DEFAULT_PREFETCH_SKIP
     pub(super) fn select_prefetch_targets(&self, parent: &std::path::Path) -> Vec<PathBuf> {
         let limit = self.config.prefetch_per_parent;
         if limit == 0 {
@@ -125,6 +132,7 @@ impl DirectoryTree {
         };
         let max_depth = self.config.max_depth;
         let root = &self.config.root_path;
+        let skip = &self.config.prefetch_skip;
         node.children
             .iter()
             .filter(|c| c.is_dir && !c.is_loaded && c.error.is_none())
@@ -132,6 +140,7 @@ impl DirectoryTree {
                 None => true,
                 Some(cap) => super::depth_of(root, &c.path) <= cap,
             })
+            .filter(|c| !basename_in_skip_list(&c.path, skip))
             .take(limit)
             .map(|c| c.path.clone())
             .collect()
@@ -149,6 +158,26 @@ fn find_ref<'a>(node: &'a TreeNode, target: &std::path::Path) -> Option<&'a Tree
         return None;
     }
     node.children.iter().find_map(|c| find_ref(c, target))
+}
+
+/// **v0.6.1:** does `path`'s basename match any entry in the skip
+/// list?
+///
+/// Comparison is ASCII case-insensitive so `.git` matches `.Git`
+/// and `.GIT` — covering the case-insensitive filesystems (HFS+,
+/// NTFS) common on macOS and Windows. Non-ASCII bytes are
+/// compared verbatim. Match is exact on the full basename —
+/// substring matches are deliberately *not* performed so
+/// `my-target-files/` isn't skipped by an entry `"target"`.
+///
+/// A `path` with no basename (weird edge case for root-only paths
+/// like `/` that shouldn't appear as prefetch candidates anyway)
+/// returns `false`.
+fn basename_in_skip_list(path: &std::path::Path, skip: &[String]) -> bool {
+    let Some(basename) = path.file_name().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    skip.iter().any(|s| s.eq_ignore_ascii_case(basename))
 }
 
 /// Build a child node list from a flat vec of loaded entries, applying

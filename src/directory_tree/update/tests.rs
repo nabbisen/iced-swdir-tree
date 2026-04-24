@@ -616,3 +616,172 @@ fn toggled_clears_a_pending_prefetch_entry() {
          so its eventual scan is treated as user-initiated"
     );
 }
+
+// -----------------------------------------------------------------
+// v0.6.1: Prefetch safety valve (skip list)
+// -----------------------------------------------------------------
+
+/// Build /r with a `.git/`-alongside-real children tree so the
+/// skip list has something to exclude.
+fn tree_with_git_and_src() -> DirectoryTree {
+    let mut tree = DirectoryTree::new(PathBuf::from("/r"));
+    tree.root.is_dir = true;
+    tree.root.is_expanded = true;
+    tree.root.is_loaded = true;
+    for name in [".git", "src", "target", "notes"] {
+        let mut c = TreeNode::new_root(PathBuf::from(format!("/r/{name}")));
+        c.is_dir = true;
+        tree.root.children.push(c);
+    }
+    tree
+}
+
+#[test]
+fn prefetch_default_skips_dot_git_and_target() {
+    // Defaults for prefetch_skip are populated in new(); `.git`
+    // and `target` should both be in it out of the box.
+    let mut tree = tree_with_git_and_src();
+    tree.config.prefetch_per_parent = 10;
+
+    let targets = tree.select_prefetch_targets(&PathBuf::from("/r"));
+    let names: Vec<_> = targets
+        .iter()
+        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .collect();
+    assert!(
+        !names.contains(&".git".to_string()),
+        "default skip list must exclude .git"
+    );
+    assert!(
+        !names.contains(&"target".to_string()),
+        "default skip list must exclude target"
+    );
+    // Non-skipped folders DO show up.
+    assert!(names.contains(&"src".to_string()));
+    assert!(names.contains(&"notes".to_string()));
+}
+
+#[test]
+fn custom_skip_list_replaces_defaults() {
+    // Setting the skip list to ["notes"] means .git becomes
+    // prefetchable and `notes` becomes skipped — the exact
+    // *replace* semantic (not extend).
+    let mut tree = tree_with_git_and_src();
+    tree.config.prefetch_per_parent = 10;
+    tree.config.prefetch_skip = vec!["notes".to_string()];
+
+    let targets = tree.select_prefetch_targets(&PathBuf::from("/r"));
+    let names: Vec<_> = targets
+        .iter()
+        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .collect();
+    assert!(
+        names.contains(&".git".to_string()),
+        "custom skip list replaces the default — .git is no longer skipped"
+    );
+    assert!(
+        !names.contains(&"notes".to_string()),
+        "notes is explicitly in the custom skip list"
+    );
+}
+
+#[test]
+fn empty_skip_list_disables_skipping() {
+    let mut tree = tree_with_git_and_src();
+    tree.config.prefetch_per_parent = 10;
+    tree.config.prefetch_skip = Vec::new();
+
+    let targets = tree.select_prefetch_targets(&PathBuf::from("/r"));
+    let names: Vec<_> = targets
+        .iter()
+        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .collect();
+    // All four folders, including `.git` and `target`, are now
+    // prefetch candidates.
+    assert_eq!(names.len(), 4);
+    assert!(names.contains(&".git".to_string()));
+    assert!(names.contains(&"target".to_string()));
+}
+
+#[test]
+fn skip_list_match_is_case_insensitive_ascii() {
+    // A user on macOS with `.Git/` on HFS+ must have it skipped
+    // by the default list's `.git` entry.
+    let mut tree = DirectoryTree::new(PathBuf::from("/r"));
+    tree.root.is_dir = true;
+    tree.root.is_expanded = true;
+    tree.root.is_loaded = true;
+    for name in [".Git", ".GIT", "Target"] {
+        let mut c = TreeNode::new_root(PathBuf::from(format!("/r/{name}")));
+        c.is_dir = true;
+        tree.root.children.push(c);
+    }
+    tree.config.prefetch_per_parent = 10;
+
+    let targets = tree.select_prefetch_targets(&PathBuf::from("/r"));
+    assert!(
+        targets.is_empty(),
+        "all three folders should match the default (ASCII-case-insensitive) \
+         skip entries .git and target"
+    );
+}
+
+#[test]
+fn skip_list_match_is_exact_basename_not_substring() {
+    // A folder called `my-target-files/` must NOT be skipped just
+    // because its name contains the substring `target`.
+    let mut tree = DirectoryTree::new(PathBuf::from("/r"));
+    tree.root.is_dir = true;
+    tree.root.is_expanded = true;
+    tree.root.is_loaded = true;
+    let mut c = TreeNode::new_root(PathBuf::from("/r/my-target-files"));
+    c.is_dir = true;
+    tree.root.children.push(c);
+    tree.config.prefetch_per_parent = 10;
+
+    let targets = tree.select_prefetch_targets(&PathBuf::from("/r"));
+    assert_eq!(
+        targets.len(),
+        1,
+        "exact-basename match: 'target' in skip list must not \
+         skip 'my-target-files'"
+    );
+}
+
+#[test]
+fn user_click_expands_skipped_folder_normally() {
+    // The whole point: skip applies ONLY to prefetch. If the user
+    // clicks to expand `.git`, we do issue a scan. The dispatcher
+    // returns a non-empty Task (generation bumped, walker invoked),
+    // not Task::none.
+    let mut tree = tree_with_git_and_src();
+    tree.config.prefetch_per_parent = 10; // prefetch on
+
+    let git = PathBuf::from("/r/.git");
+    let task = tree.update(DirectoryTreeEvent::Toggled(git.clone()));
+    assert_ne!(
+        task.units(),
+        0,
+        "user click on a skip-listed folder must still produce a real \
+         scan Task — the skip list governs prefetch only, not user-initiated \
+         expansion"
+    );
+    // And the node's is_expanded flag was flipped.
+    let node = tree.root.find_mut(&git).unwrap();
+    assert!(node.is_expanded);
+}
+
+#[test]
+fn default_prefetch_skip_const_matches_default_field() {
+    // Wiring test: a freshly-constructed DirectoryTree's
+    // prefetch_skip must equal the public DEFAULT_PREFETCH_SKIP
+    // constant. If someone edits the const but forgets to update
+    // the initializer in new(), this fires.
+    use crate::DEFAULT_PREFETCH_SKIP;
+    let tree = DirectoryTree::new(PathBuf::from("/r"));
+    let got: &[String] = &tree.config.prefetch_skip;
+    assert_eq!(got.len(), DEFAULT_PREFETCH_SKIP.len());
+    for (a, b) in got.iter().zip(DEFAULT_PREFETCH_SKIP.iter()) {
+        assert_eq!(a, b);
+    }
+}

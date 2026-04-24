@@ -2,6 +2,74 @@
 
 use std::path::PathBuf;
 
+/// The default set of basenames that [`DirectoryTree`]'s v0.5 prefetch
+/// machinery skips, populated into [`TreeConfig::prefetch_skip`] by
+/// default.
+///
+/// These are directories that are commonly present, commonly *enormous*,
+/// and commonly *not* what a user browses for in a tree widget:
+///
+/// * **Version control metadata** — `.git`, `.hg`, `.svn`. A `.git/`
+///   directory alone can contain tens of thousands of tiny files
+///   under `objects/`; speculatively scanning it on every repo-root
+///   expansion is wasteful even on fast SSDs.
+/// * **JavaScript dependencies** — `node_modules`. Frequently the
+///   single largest directory in a project by both file count and
+///   bytes.
+/// * **Python caches and virtual environments** — `__pycache__`,
+///   `.venv`, `venv`.
+/// * **Build artifacts** — `target` (Rust, Java), `build`, `dist`.
+///
+/// The match is **exact-basename, ASCII case-insensitive**. Substring
+/// matches are *not* performed — a folder named `my-target-files/`
+/// is *not* skipped by the entry `"target"`.
+///
+/// # Overriding the default
+///
+/// This list is a starting point, not a contract. Apps that want to
+/// skip additional directories should merge with the default:
+///
+/// ```ignore
+/// use iced_swdir_tree::{DirectoryTree, DEFAULT_PREFETCH_SKIP};
+///
+/// let mut skip: Vec<String> = DEFAULT_PREFETCH_SKIP
+///     .iter()
+///     .map(|&s| s.to_string())
+///     .collect();
+/// skip.push("huge_media_library".into());
+///
+/// let tree = DirectoryTree::new(root)
+///     .with_prefetch_limit(10)
+///     .with_prefetch_skip(skip);
+/// ```
+///
+/// Apps that want to disable skipping entirely — for example a
+/// dedicated `.git/` viewer — can pass an empty list:
+///
+/// ```ignore
+/// let tree = DirectoryTree::new(root).with_prefetch_skip(Vec::<String>::new());
+/// ```
+///
+/// # User clicks are never skipped
+///
+/// This list applies *only* to automatic prefetch. If the user
+/// explicitly clicks to expand a skipped folder, the widget scans
+/// it normally — their click is an explicit request.
+///
+/// [`DirectoryTree`]: crate::DirectoryTree
+pub const DEFAULT_PREFETCH_SKIP: &[&str] = &[
+    ".git",
+    ".hg",
+    ".svn",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "target",
+    "build",
+    "dist",
+];
+
 /// Controls which entries the widget displays.
 ///
 /// The widget *always* scans every entry of an expanded directory
@@ -89,6 +157,27 @@ pub struct TreeConfig {
     ///
     /// [`ScanExecutor`]: crate::ScanExecutor
     pub prefetch_per_parent: usize,
+    /// **v0.6.1 — prefetch safety valve.**
+    ///
+    /// A list of basenames that [`DirectoryTree`]'s prefetch
+    /// machinery refuses to scan. Match is **exact-basename, ASCII
+    /// case-insensitive**: the entry `"target"` skips a folder
+    /// named `target/` or `Target/` but not `my-target-files/`.
+    ///
+    /// Defaults to [`DEFAULT_PREFETCH_SKIP`] — a curated list of
+    /// common very-large directories (`.git`, `node_modules`,
+    /// `target`, …) that are rarely the thing a user is browsing
+    /// toward when they click around a tree. Apps can replace the
+    /// list entirely via [`with_prefetch_skip`], or disable
+    /// skipping by passing an empty list.
+    ///
+    /// Applies **only** to automatic prefetch scans. A user-
+    /// initiated expansion (they clicked it) is never filtered —
+    /// their click is an explicit request.
+    ///
+    /// [`DirectoryTree`]: crate::DirectoryTree
+    /// [`with_prefetch_skip`]: crate::DirectoryTree::with_prefetch_skip
+    pub prefetch_skip: Vec<String>,
 }
 
 #[cfg(test)]

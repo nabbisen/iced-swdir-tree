@@ -5,6 +5,77 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] — 2026-04-24
+
+Adds a **safety valve for v0.5 prefetch**: the widget now refuses
+to speculatively scan directories whose basenames appear in a
+configurable skip list. The default list covers the usual
+suspects — version-control metadata (`.git`, `.hg`, `.svn`),
+JavaScript (`node_modules`), Python (`__pycache__`, `.venv`,
+`venv`), Rust/Java (`target`), and generic build output (`build`,
+`dist`).
+
+### Why
+
+v0.5 prefetch eagerly scans folder-children of any user-expanded
+folder. On a typical Rust/Node project root that means
+speculatively scanning `.git/objects/` (tens of thousands of
+tiny files) and `node_modules/` (potentially hundreds of
+thousands) on the first expansion — a large I/O cost for content
+the user was almost certainly not browsing toward. 0.6.1 closes
+that trap.
+
+### Added
+
+- **`DEFAULT_PREFETCH_SKIP`** — public `&[&str]` constant with
+  the default skip list. Re-exported from the crate root so apps
+  can read it and extend.
+- **`DirectoryTree::with_prefetch_skip<I, S>(I) -> Self`** where
+  `I: IntoIterator<Item = S>, S: Into<String>` — replace the skip
+  list (default is populated from `DEFAULT_PREFETCH_SKIP`). Pass
+  an empty iterator to disable skipping entirely.
+- **`TreeConfig::prefetch_skip: Vec<String>`** — the field that
+  actually holds the list. `pub` so tests/tooling can introspect.
+- **7 new unit tests** (`default-skips-dot-git-and-target`,
+  `custom-list-replaces-defaults`, `empty-list-disables`,
+  `case-insensitive-ascii-match`, `exact-basename-not-substring`,
+  `user-click-still-scans-skipped`,
+  `default-const-matches-default-field`).
+- **6 new integration tests** (`default-prevents-dot-git`,
+  `default-prevents-node_modules-and-target`,
+  `user-click-scans-skipped`, `custom-replaces-defaults`,
+  `empty-disables`, `const-is-reexported`).
+
+### Behaviour change (patch-level)
+
+On `0.6.0`, an app with `with_prefetch_limit(N)` enabled over a
+repo root would see its `.git/`, `node_modules/`, and `target/`
+directories silently prefetched. On `0.6.1`, they are skipped by
+default. Apps that actually *want* `.git/` prefetched — e.g. a
+dedicated git-objects browser — must opt in explicitly with
+`.with_prefetch_skip(Vec::<String>::new())` or a custom list
+that excludes it.
+
+This is a deliberate strictly-safer default. No public API is
+removed; no downstream code that compiled against 0.6.0 fails to
+compile against 0.6.1.
+
+### Matching rules (documented)
+
+- **Exact basename match**, not substring. `"target"` skips
+  `target/` and `Target/` but not `my-target-files/`.
+- **ASCII case-insensitive.** Picks up `.Git/` on case-
+  insensitive filesystems (macOS HFS+, Windows NTFS) without the
+  app having to list every casing.
+- **Prefetch only.** A user click on a skipped folder still
+  expands it normally. The skip list governs automatic behaviour,
+  not user actions.
+
+### Test counts
+
+- **141 total** (was 128): 80 unit + 60 integration + 1 doctest.
+  Added 7 unit and 6 integration tests for the safety valve.
+
 ## [0.6.0] — 2026-04-24
 
 Delivers the v1.0-required roadmap item: **incremental search

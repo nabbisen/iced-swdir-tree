@@ -181,3 +181,152 @@ fn clicking_a_prefetched_folder_is_instant() {
     assert!(node.is_expanded);
     assert!(!node.children.is_empty());
 }
+
+// -----------------------------------------------------------------
+// v0.6.1: Prefetch safety valve against real filesystem
+// -----------------------------------------------------------------
+
+/// Build a "real" repo layout with the usual big-and-skippable
+/// subdirectories (`.git/`, `node_modules/`, `target/`) alongside
+/// ordinary content the user would expect to see scanned.
+fn build_repo_fixture(tag: &str) -> TmpDir {
+    let td = TmpDir::new(tag);
+    // Populate skippable directories with enough content to be
+    // observable — if prefetch wrongly enters them, there's
+    // something on the other side.
+    fs::create_dir(td.path().join(".git")).unwrap();
+    fs::write(td.path().join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
+    fs::create_dir(td.path().join(".git/objects")).unwrap();
+
+    fs::create_dir(td.path().join("node_modules")).unwrap();
+    fs::write(td.path().join("node_modules/.package-lock.json"), b"{}").unwrap();
+
+    fs::create_dir(td.path().join("target")).unwrap();
+    fs::create_dir(td.path().join("target/debug")).unwrap();
+
+    // Ordinary user content.
+    fs::create_dir(td.path().join("src")).unwrap();
+    fs::write(td.path().join("src/main.rs"), b"fn main() {}\n").unwrap();
+    fs::create_dir(td.path().join("docs")).unwrap();
+    fs::write(td.path().join("docs/readme.md"), b"docs\n").unwrap();
+    td
+}
+
+#[test]
+fn default_skip_list_prevents_prefetching_dot_git() {
+    // Baseline: prefetch enabled, default skip list active.
+    // After expanding root, `.git/` must NOT be prefetched even
+    // though other siblings were.
+    let td = build_repo_fixture("skip-default-git");
+    let mut tree = DirectoryTree::new(td.path().to_path_buf())
+        .with_filter(DirectoryFilter::AllIncludingHidden)
+        .with_prefetch_limit(10);
+    tree.__test_expand_blocking(td.path().to_path_buf());
+
+    let dot_git = find_in_tree(&tree, &td.path().join(".git")).expect(".git row exists");
+    assert!(
+        !dot_git.is_loaded,
+        "default skip list must have prevented prefetch of .git"
+    );
+    assert!(dot_git.children.is_empty(), "no children scanned");
+    // The sibling `src/` IS prefetched as usual.
+    let src = find_in_tree(&tree, &td.path().join("src")).unwrap();
+    assert!(
+        src.is_loaded,
+        "ordinary src/ should have been prefetched normally"
+    );
+}
+
+#[test]
+fn default_skip_list_prevents_prefetching_node_modules_and_target() {
+    let td = build_repo_fixture("skip-default-all");
+    let mut tree = DirectoryTree::new(td.path().to_path_buf())
+        .with_filter(DirectoryFilter::AllIncludingHidden)
+        .with_prefetch_limit(10);
+    tree.__test_expand_blocking(td.path().to_path_buf());
+
+    for skipped in &["node_modules", "target"] {
+        let node = find_in_tree(&tree, &td.path().join(skipped))
+            .unwrap_or_else(|| panic!("{skipped} row missing"));
+        assert!(
+            !node.is_loaded,
+            "{skipped} must not be prefetched by default"
+        );
+    }
+}
+
+#[test]
+fn user_click_still_scans_a_skipped_folder() {
+    use iced_swdir_tree::DirectoryTreeEvent;
+
+    let td = build_repo_fixture("skip-user-click");
+    let mut tree = DirectoryTree::new(td.path().to_path_buf())
+        .with_filter(DirectoryFilter::AllIncludingHidden)
+        .with_prefetch_limit(10);
+    tree.__test_expand_blocking(td.path().to_path_buf());
+
+    // `.git/` was not prefetched. When the user EXPLICITLY clicks
+    // it, we must scan it normally — the skip list governs
+    // prefetch, not user actions.
+    let dot_git = td.path().join(".git");
+    assert!(!find_in_tree(&tree, &dot_git).unwrap().is_loaded);
+    let task = tree.update(DirectoryTreeEvent::Toggled(dot_git.clone()));
+    assert_ne!(
+        task.units(),
+        0,
+        "user click on a skipped folder must produce a real scan Task"
+    );
+}
+
+#[test]
+fn custom_skip_list_replaces_defaults() {
+    // Pass a one-entry skip list of ["docs"]. `.git/`,
+    // `node_modules/`, and `target/` are now all prefetchable
+    // (they're no longer in the list), but `docs/` is skipped.
+    let td = build_repo_fixture("skip-custom");
+    let mut tree = DirectoryTree::new(td.path().to_path_buf())
+        .with_filter(DirectoryFilter::AllIncludingHidden)
+        .with_prefetch_limit(10)
+        .with_prefetch_skip(vec!["docs"]);
+    tree.__test_expand_blocking(td.path().to_path_buf());
+
+    let docs = find_in_tree(&tree, &td.path().join("docs")).unwrap();
+    assert!(!docs.is_loaded, "docs/ is in the custom skip list");
+
+    // With .git no longer in the skip list, it IS prefetched. We
+    // check one of the other non-default-skipped paths too.
+    let dot_git = find_in_tree(&tree, &td.path().join(".git")).unwrap();
+    assert!(
+        dot_git.is_loaded,
+        "custom list replaces the default — .git is no longer skipped"
+    );
+}
+
+#[test]
+fn empty_skip_list_disables_the_safety_valve() {
+    // Apps that want to intentionally browse into `.git/` can
+    // pass an empty list.
+    let td = build_repo_fixture("skip-disabled");
+    let mut tree = DirectoryTree::new(td.path().to_path_buf())
+        .with_filter(DirectoryFilter::AllIncludingHidden)
+        .with_prefetch_limit(10)
+        .with_prefetch_skip(Vec::<String>::new());
+    tree.__test_expand_blocking(td.path().to_path_buf());
+
+    let dot_git = find_in_tree(&tree, &td.path().join(".git")).unwrap();
+    assert!(
+        dot_git.is_loaded,
+        "an empty skip list disables the safety valve entirely"
+    );
+}
+
+#[test]
+fn default_prefetch_skip_is_reexported_from_crate_root() {
+    // Wiring: the DEFAULT_PREFETCH_SKIP const is in the public API
+    // so apps can read it and extend. Cover the re-export path so
+    // removing it shows up in tests, not in downstream breakage.
+    use iced_swdir_tree::DEFAULT_PREFETCH_SKIP;
+    assert!(DEFAULT_PREFETCH_SKIP.contains(&".git"));
+    assert!(DEFAULT_PREFETCH_SKIP.contains(&"node_modules"));
+    assert!(DEFAULT_PREFETCH_SKIP.contains(&"target"));
+}

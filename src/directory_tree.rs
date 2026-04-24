@@ -155,6 +155,10 @@ impl DirectoryTree {
                 filter: DirectoryFilter::default(),
                 max_depth: None,
                 prefetch_per_parent: 0,
+                prefetch_skip: config::DEFAULT_PREFETCH_SKIP
+                    .iter()
+                    .map(|&s| s.to_string())
+                    .collect(),
             },
             cache: TreeCache::default(),
             generation: 0,
@@ -226,6 +230,55 @@ impl DirectoryTree {
     /// See [`TreeConfig::prefetch_per_parent`] for the full contract.
     pub fn with_prefetch_limit(mut self, limit: usize) -> Self {
         self.config.prefetch_per_parent = limit;
+        self
+    }
+
+    /// **v0.6.1:** replace the prefetch skip list.
+    ///
+    /// The list holds basenames that [`with_prefetch_limit`](Self::with_prefetch_limit)-
+    /// driven scans will refuse to enter. Match is **exact-basename,
+    /// ASCII case-insensitive** — `"target"` skips `target/` and
+    /// `Target/` but not `my-target-files/`. The list applies
+    /// **only** to automatic prefetch; a user click on a skipped
+    /// folder still expands it normally.
+    ///
+    /// Replacing the list drops the default entries (see
+    /// [`DEFAULT_PREFETCH_SKIP`]). To add entries while keeping
+    /// the defaults, read them and append:
+    ///
+    /// ```ignore
+    /// use iced_swdir_tree::{DirectoryTree, DEFAULT_PREFETCH_SKIP};
+    ///
+    /// let mut skip: Vec<String> = DEFAULT_PREFETCH_SKIP
+    ///     .iter()
+    ///     .map(|&s| s.to_string())
+    ///     .collect();
+    /// skip.push("huge_media_library".into());
+    ///
+    /// let tree = DirectoryTree::new(root)
+    ///     .with_prefetch_limit(10)
+    ///     .with_prefetch_skip(skip);
+    /// ```
+    ///
+    /// To disable skipping entirely (dangerous — means `.git/` and
+    /// `node_modules/` *will* be prefetched), pass an empty list:
+    ///
+    /// ```ignore
+    /// let tree = DirectoryTree::new(root)
+    ///     .with_prefetch_limit(10)
+    ///     .with_prefetch_skip(Vec::<String>::new());
+    /// ```
+    ///
+    /// See [`DEFAULT_PREFETCH_SKIP`] for the set populated by
+    /// default.
+    ///
+    /// [`DEFAULT_PREFETCH_SKIP`]: crate::DEFAULT_PREFETCH_SKIP
+    pub fn with_prefetch_skip<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.config.prefetch_skip = names.into_iter().map(Into::into).collect();
         self
     }
 

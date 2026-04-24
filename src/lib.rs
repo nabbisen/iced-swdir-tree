@@ -89,7 +89,7 @@ mod directory_tree;
 
 pub use crate::directory_tree::{
     DirectoryTree,
-    config::{DirectoryFilter, TreeConfig},
+    config::{DEFAULT_PREFETCH_SKIP, DirectoryFilter, TreeConfig},
     drag::DragMsg,
     error::Error,
     executor::{ScanExecutor, ScanFuture, ScanJob, ThreadExecutor},
