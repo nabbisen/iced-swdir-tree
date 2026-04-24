@@ -5,6 +5,96 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-04-24
+
+Delivers the third v1.0-required roadmap item: **parallel
+pre-expansion of visible descendants**. When a user expands a
+folder, the widget can now speculatively issue background scans
+for the folder's direct children-that-are-folders, in parallel via
+the existing [`ScanExecutor`] trait. When the user next clicks to
+expand one of those children, no I/O happens — the data is
+already cached. Apps with a fast executor (tokio / smol / rayon)
+get real concurrency for free.
+
+### Added
+
+- **`TreeConfig::prefetch_per_parent: usize`** — caps how many
+  folder-children to prefetch when a parent's scan completes. `0`
+  (the default) disables prefetch and matches v0.1–0.4 behaviour
+  exactly. See the field docs for the full contract.
+- **`DirectoryTree::with_prefetch_limit(usize) -> Self`** —
+  builder method matching `with_filter` / `with_max_depth` /
+  `with_executor` style.
+- **`DirectoryTree::prefetching_paths`** — `pub(crate)` state
+  tracking paths whose prefetch-triggered scans are in flight.
+  Used by `on_loaded` to prevent cascade and by `on_toggled` to
+  upgrade a pending prefetch to a user action when the user
+  clicks to expand a path that's about to prefetch-load.
+- **Six new integration tests** in `tests/prefetch.rs` covering
+  the baseline (disabled), folder-children-only, one-level-deep
+  no-cascade, `max_depth` interaction, the limit cap, and the
+  prefetched-click-is-instant fast path.
+- **Seven new unit tests** in `update/tests.rs` covering
+  `select_prefetch_targets` edge cases and the cascade-prevention
+  machinery.
+
+### Changed — contract and cascade prevention
+
+- **`on_loaded` signature**: now returns `Vec<PathBuf>` — the
+  paths the widget wants scanned next as prefetch targets. The
+  `update()` dispatcher converts that Vec into a `Task::batch` of
+  scan tasks. This keeps handlers as pure state transitions and
+  task emission centralized in the dispatcher.
+- **`on_toggled`**: when the user expands a path that's currently
+  being prefetched, the prefetch flag is cleared so the eventual
+  fresh scan is treated as a user-initiated load (and triggers
+  its own prefetch wave). The stale prefetch result will arrive
+  with a mismatched generation and be dropped by the existing
+  generation check.
+- **`__test_expand_blocking`**: now also drains the prefetch wave
+  synchronously when prefetch is enabled. Integration tests that
+  used to assert on "after expanding /r, only /r's children are
+  loaded" still pass — they use the default `prefetch_per_parent
+  = 0`. Tests that explicitly opt in via `.with_prefetch_limit(N)`
+  see folder-grandchildren populated after a single call.
+
+### Breaking change (pre-1.0 minor bump)
+
+- **`TreeConfig` gained a public field** (`prefetch_per_parent`).
+  External code that constructs `TreeConfig` by value — rather
+  than using the `DirectoryTree::new`/`with_*` builder chain —
+  needs to add the new field (or use `..Default::default()` if it
+  derives Default on its own wrapper). Per semver's pre-1.0
+  allowance, minor-version bumps may break; the overwhelming
+  majority of apps construct `DirectoryTree` via the builder and
+  are unaffected.
+
+### Limitations documented
+
+- **One-level-deep only.** A folder loaded via prefetch does not
+  itself trigger further prefetch scans. Cascading prefetch is
+  exponential (`per_parent ^ depth`) and is not appropriate as a
+  default. Apps that want deeper behaviour can either issue
+  further `Toggled` events from their update handler, or bump
+  `per_parent` very high and accept that user clicks still do one
+  round-trip per level.
+- **No global concurrency cap.** Each user-initiated expansion
+  bursts up to `prefetch_per_parent` scans into the executor.
+  With the default `ThreadExecutor` (one `std::thread::spawn` per
+  scan), a `prefetch_per_parent = 50` setting on a 20-child
+  folder means 50 threads in flight at once. Apps on the default
+  executor should keep `per_parent` modest (5–25). Apps that have
+  plugged in a bounded tokio/smol pool don't have this problem —
+  the pool queues excess tasks.
+- **Prefetch doesn't auto-expand.** `is_loaded = true` but
+  `is_expanded = false`. The user still controls what's drawn
+  on screen; prefetch only makes the eventual expand instant.
+
+### Test counts
+
+- **113 total** (was 100): 67 unit + 45 integration + 1 doctest.
+  Added 7 unit and 6 integration tests for prefetch.
+
 ## [0.4.2] — 2026-04-24
 
 **Pure refactor release. No behaviour changes, no public API

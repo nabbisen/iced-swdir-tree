@@ -42,15 +42,16 @@ reorganization: the two large integration binaries split into 12
 themed files plus a shared `tests/common/mod.rs` helper. Same
 100 tests, same names, same behaviour; smaller files.
 
-## Remaining for v1.0
+### v0.5.0 — Parallel pre-expansion of visible descendants ✅
+See [CHANGELOG](CHANGELOG.md#050--2026-04-24). Opt-in via
+`DirectoryTree::with_prefetch_limit(N)`: when a user expands a
+folder, the widget speculatively issues parallel scans for up to
+`N` of its folder-children so clicking any of them becomes
+instant. One level deep only (no cascade). Respects `max_depth`.
+`0` (default) disables prefetch entirely and preserves v0.4
+behaviour exactly.
 
-### v0.5.0 — Parallel pre-expansion of visible descendants
-Expanding a folder issues one scan; expanding ten sub-folders
-issues ten serial round-trips through the executor. A "pre-expand"
-mode can fire N scans in parallel for everything visible but not yet
-loaded, throttled by a configurable concurrency knob. Builds on the
-`ScanExecutor` trait from v0.2 so `tokio`/`smol` users get native
-parallelism for free.
+## Remaining for v1.0
 
 ### v0.6.0 — Incremental search with real-time filtering
 A text-input filter on top of the tree: as the user types, rows
@@ -76,3 +77,5 @@ dependency.
   implement to add e.g. git-status dots, file-size labels, or
   last-modified timestamps.
 - Context-menu hooks (`on_right_click`-style events).
+- Deeper prefetch cascade (configurable depth, global concurrency
+  cap) — can land as a 0.5.x patch if demand materializes.

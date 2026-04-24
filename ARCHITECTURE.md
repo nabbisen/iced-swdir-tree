@@ -128,3 +128,35 @@ needs. The cost is that the plain container doesn't track hover
 state the way `button::text` did — non-selected rows lose their
 native hover glow. Selected and drop-target rows still paint with
 styled backgrounds from the theme's extended palette.
+
+## Parallel pre-expansion (v0.5+)
+
+Pre-fetch is implemented entirely inside the update layer. Three
+things coordinate:
+
+1. **`config.prefetch_per_parent`** — the cap. `0` disables.
+2. **`on_loaded` returns `Vec<PathBuf>`** of prefetch targets
+   computed from the just-merged children (`select_prefetch_targets`
+   filters to folder-children that aren't already loaded, under
+   `max_depth`, capped at `per_parent`).
+3. **`prefetching_paths: HashSet<PathBuf>`** on the tree — records
+   which paths are currently being prefetch-scanned. When the
+   scan result for one of them arrives, `on_loaded` drains the
+   flag and returns an **empty** target list — no cascade. A
+   user-initiated `on_toggled` removes any pending entry for the
+   path it's about to scan, so the stale prefetch result (dropped
+   by generation mismatch) won't leave dangling state.
+
+The dispatcher is the only layer that knows about the executor:
+it takes the `Vec<PathBuf>` returned from `on_loaded`, calls
+`walker::scan` for each, batches the resulting Tasks, and returns
+them. Handlers stay pure state transitions.
+
+The "one level deep only" restriction is enforced by the
+`prefetching_paths` check: a prefetch-triggered scan result never
+has an empty `remove` — it was put there when its scan was
+issued. So the cascade-prevention check in `on_loaded` fires for
+it, producing empty targets. A user-initiated scan never has its
+path in `prefetching_paths` (or, if it did, `on_toggled` removed
+it before the new scan was issued), so its result produces
+non-empty targets.

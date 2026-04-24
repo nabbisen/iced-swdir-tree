@@ -22,6 +22,11 @@ expand one folder at a time.
   destination }` event and the app performs the actual move/copy/
   upload/whatever. The widget performs no filesystem operations
   itself. See [Drag-and-drop](#drag-and-drop).
+- **Parallel pre-expansion.** Opt into `with_prefetch_limit(N)` and
+  the widget will speculatively scan the first `N` folder-children
+  of any folder the user expands, in parallel via the executor, so
+  clicking any of them is instant. One level deep only (no cascade).
+  See [Parallel pre-expansion](#parallel-pre-expansion).
 - **Lazy loading.** Only the root is created eagerly; child folders are
   scanned on first expand.
 - **Non-blocking.** Directory traversal runs on a worker thread through
@@ -55,7 +60,7 @@ expand one folder at a time.
 ```toml
 [dependencies]
 iced = "0.14"
-iced-swdir-tree = "0.4"
+iced-swdir-tree = "0.5"
 ```
 
 To use real lucide icons instead of the Unicode-symbol fallback:
@@ -63,7 +68,7 @@ To use real lucide icons instead of the Unicode-symbol fallback:
 ```toml
 [dependencies]
 iced = "0.14"
-iced-swdir-tree = { version = "0.4", features = ["icons"] }
+iced-swdir-tree = { version = "0.5", features = ["icons"] }
 ```
 
 The crate works without your application adding `swdir` directly — the
@@ -283,6 +288,41 @@ tree.drop_target();      // Option<&Path> — hovered valid folder
 See [`examples/drag_drop.rs`](examples/drag_drop.rs) for a complete
 working app with `fs::rename` on drop, post-move refresh, and a
 live drag-preview status bar.
+
+## Parallel pre-expansion
+
+Apps on a fast executor (tokio, smol, rayon) usually have more I/O
+capacity than one-folder-per-gesture uses. `with_prefetch_limit(N)`
+opts into parallel pre-expansion: whenever a user expands a folder
+and its children come back, the widget speculatively fires scan
+tasks for the first `N` of those children that are folders. Those
+scans populate the cache but do **not** auto-expand anything —
+`is_loaded = true` without `is_expanded = true`. When the user
+later clicks to expand one of the pre-fetched folders, no I/O
+happens: it's an instant fast-path re-expand.
+
+```rust,ignore
+use iced_swdir_tree::DirectoryTree;
+use std::sync::Arc;
+
+let tree = DirectoryTree::new(root)
+    .with_executor(Arc::new(MyTokioExecutor))
+    .with_prefetch_limit(10);
+```
+
+Pass `0` (or don't call `with_prefetch_limit` at all) to disable
+prefetch — that's the default and matches v0.1–0.4 behaviour
+exactly. Prefetch is **one level deep**: a folder that loaded via
+prefetch does not itself trigger further prefetches, so the I/O
+budget is `per_parent` scans per user expansion, not
+`per_parent ^ depth`. It also respects `with_max_depth(..)`:
+children past the cap are skipped rather than scanned.
+
+Sensible values depend on your executor. On the default
+`ThreadExecutor` (one `std::thread::spawn` per scan), keep it
+modest (5–25) — each prefetch becomes a real OS thread. On a
+bounded tokio/smol pool, a higher value is free: excess tasks just
+queue behind the pool's worker cap.
 
 ## Keyboard navigation
 

@@ -96,6 +96,24 @@ pub struct DirectoryTree {
     /// [`DragCompleted`](crate::DirectoryTreeEvent::DragCompleted)
     /// on successful drop.
     pub(crate) drag: Option<drag::DragState>,
+    /// **v0.5:** paths for which a prefetch-triggered scan is
+    /// currently in flight.
+    ///
+    /// Populated by the [`update`](crate::directory_tree::update)
+    /// dispatcher when it issues prefetch scans following a user
+    /// expansion; drained by `on_loaded` when each scan result
+    /// arrives. The presence of a path in this set is how the
+    /// widget tells "this scan result came from prefetch — don't
+    /// re-prefetch its children" apart from "this scan result came
+    /// from a user-initiated expand — do prefetch its children".
+    /// Prevents the exponential-cascade trap.
+    ///
+    /// When the user explicitly expands a path that's currently in
+    /// this set (rare but possible: they click faster than the
+    /// prefetch scan completes), `on_toggled` removes the path so
+    /// the eventual user-initiated result triggers its own prefetch
+    /// wave normally.
+    pub(crate) prefetching_paths: std::collections::HashSet<std::path::PathBuf>,
     /// Pluggable executor that runs blocking `scan_dir` calls.
     ///
     /// Defaults to [`ThreadExecutor`] (one `std::thread::spawn` per
@@ -122,6 +140,7 @@ impl DirectoryTree {
                 root_path: root,
                 filter: DirectoryFilter::default(),
                 max_depth: None,
+                prefetch_per_parent: 0,
             },
             cache: TreeCache::default(),
             generation: 0,
@@ -129,6 +148,7 @@ impl DirectoryTree {
             active_path: None,
             anchor_path: None,
             drag: None,
+            prefetching_paths: std::collections::HashSet::new(),
             executor: Arc::new(ThreadExecutor),
         }
     }
@@ -151,6 +171,46 @@ impl DirectoryTree {
     /// more level of descent; and so on. No limit by default.
     pub fn with_max_depth(mut self, depth: u32) -> Self {
         self.config.max_depth = Some(depth);
+        self
+    }
+
+    /// **v0.5:** configure parallel pre-expansion of visible descendants.
+    ///
+    /// When a user-initiated expansion finishes loading a folder,
+    /// the widget will eagerly issue background scans for up to
+    /// `limit` of that folder's direct children-that-are-folders, in
+    /// parallel via the widget's [`ScanExecutor`]. Those children's
+    /// data is loaded into the in-memory cache (`is_loaded = true`)
+    /// but they are **not** automatically expanded in the UI — the
+    /// user still controls what's drawn. When they click to expand
+    /// a prefetched child, no I/O happens: the expansion is instant.
+    ///
+    /// Passing `0` (the default) disables prefetch and restores
+    /// v0.1–0.4 behaviour exactly. Typical app values: `5`–`25`,
+    /// sized to the number of folder-children a user plausibly
+    /// targets with their next click. A very high value effectively
+    /// means "prefetch every child folder" — the crate doesn't cap
+    /// it, because apps with fast executors (tokio / rayon / smol)
+    /// can legitimately want that.
+    ///
+    /// ```ignore
+    /// let tree = DirectoryTree::new(root)
+    ///     .with_executor(my_tokio_executor)   // fast pool
+    ///     .with_prefetch_limit(20);           // up to 20 parallel scans
+    /// ```
+    ///
+    /// Prefetch is **one level deep only**: a folder that loaded via
+    /// prefetch does not itself trigger further prefetches. This
+    /// avoids the exponential `limit ^ depth` cascade that would
+    /// otherwise paper-over I/O costs the user didn't ask for.
+    ///
+    /// Prefetch respects [`with_max_depth`](Self::with_max_depth)
+    /// the same way user-initiated scans do — a prefetch target
+    /// past the cap is skipped, not scanned.
+    ///
+    /// See [`TreeConfig::prefetch_per_parent`] for the full contract.
+    pub fn with_prefetch_limit(mut self, limit: usize) -> Self {
+        self.config.prefetch_per_parent = limit;
         self
     }
 

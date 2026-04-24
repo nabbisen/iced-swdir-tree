@@ -61,6 +61,14 @@ impl DirectoryTree {
         // Bump the generation and issue the scan. The generation is
         // captured by value into the closure so a future re-expansion
         // can invalidate this in-flight result.
+        //
+        // v0.5: if a prefetch scan was already in flight for this
+        // path, "upgrade" this to a user-initiated scan by removing
+        // the prefetch flag. The stale prefetch result will arrive
+        // with an older generation and be dropped; this scan's result
+        // will arrive with the fresh generation and be treated as a
+        // user-initiated load (triggering its own prefetch wave).
+        self.prefetching_paths.remove(&path);
         self.generation = self.generation.wrapping_add(1);
         walker::scan(self.executor.clone(), path, self.generation, depth)
     }

@@ -479,3 +479,140 @@ fn stray_events_without_press_are_noops() {
     let _ = tree.update(DirectoryTreeEvent::Drag(DragMsg::Cancelled));
     assert!(!tree.is_dragging());
 }
+
+// -----------------------------------------------------------------
+// v0.5: Prefetch (parallel pre-expansion of visible descendants)
+// -----------------------------------------------------------------
+
+/// Build a /r tree whose root is already expanded + loaded, with
+/// three folder-children /r/x, /r/y, /r/z and a file /r/f. Lets us
+/// test `select_prefetch_targets` without actually scanning.
+fn tree_with_mixed_children() -> DirectoryTree {
+    let mut tree = DirectoryTree::new(PathBuf::from("/r"));
+    tree.root.is_dir = true;
+    tree.root.is_expanded = true;
+    tree.root.is_loaded = true;
+    for name in ["x", "y", "z"] {
+        let mut c = TreeNode::new_root(PathBuf::from(format!("/r/{name}")));
+        c.is_dir = true;
+        tree.root.children.push(c);
+    }
+    let mut f = TreeNode::new_root(PathBuf::from("/r/f"));
+    f.is_dir = false;
+    tree.root.children.push(f);
+    tree
+}
+
+#[test]
+fn prefetch_disabled_by_default_returns_no_targets() {
+    let tree = tree_with_mixed_children();
+    assert_eq!(tree.config.prefetch_per_parent, 0);
+    assert!(
+        tree.select_prefetch_targets(&PathBuf::from("/r"))
+            .is_empty()
+    );
+}
+
+#[test]
+fn prefetch_selects_folder_children_only() {
+    let mut tree = tree_with_mixed_children();
+    tree.config.prefetch_per_parent = 10;
+    let targets = tree.select_prefetch_targets(&PathBuf::from("/r"));
+    // Should have x, y, z (folders) but not f (file).
+    assert_eq!(targets.len(), 3);
+    assert!(targets.iter().any(|p| p == &PathBuf::from("/r/x")));
+    assert!(targets.iter().any(|p| p == &PathBuf::from("/r/y")));
+    assert!(targets.iter().any(|p| p == &PathBuf::from("/r/z")));
+    assert!(!targets.iter().any(|p| p == &PathBuf::from("/r/f")));
+}
+
+#[test]
+fn prefetch_respects_the_limit() {
+    let mut tree = tree_with_mixed_children();
+    tree.config.prefetch_per_parent = 2;
+    let targets = tree.select_prefetch_targets(&PathBuf::from("/r"));
+    assert_eq!(targets.len(), 2);
+}
+
+#[test]
+fn prefetch_skips_already_loaded_children() {
+    // If /r/x is already loaded (cached from a previous expansion),
+    // there's nothing to prefetch there. Leave it out of the targets.
+    let mut tree = tree_with_mixed_children();
+    tree.config.prefetch_per_parent = 10;
+    tree.root
+        .children
+        .iter_mut()
+        .find(|c| c.path.as_path() == std::path::Path::new("/r/x"))
+        .unwrap()
+        .is_loaded = true;
+    let targets = tree.select_prefetch_targets(&PathBuf::from("/r"));
+    assert_eq!(targets.len(), 2);
+    assert!(!targets.iter().any(|p| p == &PathBuf::from("/r/x")));
+}
+
+#[test]
+fn prefetch_respects_max_depth() {
+    // With max_depth=0, no scan of depth > 0 is allowed. /r's
+    // children are at depth 1, so even with prefetch enabled the
+    // target list is empty.
+    let mut tree = tree_with_mixed_children();
+    tree.config.prefetch_per_parent = 10;
+    tree.config.max_depth = Some(0);
+    let targets = tree.select_prefetch_targets(&PathBuf::from("/r"));
+    assert!(
+        targets.is_empty(),
+        "max_depth=0 must suppress all prefetch of /r's children"
+    );
+}
+
+#[test]
+fn on_loaded_drains_prefetching_paths_without_cascade() {
+    // Simulate: /r is loaded (user action), then /r/x's prefetch
+    // result arrives. The second on_loaded must return empty
+    // targets (no cascade into /r/x/*).
+    let mut tree = tree_with_mixed_children();
+    tree.config.prefetch_per_parent = 10;
+
+    // Mark /r/x as prefetching (this is what issue_prefetch_scans
+    // would have done).
+    tree.prefetching_paths.insert(PathBuf::from("/r/x"));
+
+    // Simulate a prefetch scan result for /r/x arriving: bump gen,
+    // build a payload with empty children, feed to on_loaded.
+    let next_gen = tree.generation.wrapping_add(1);
+    tree.generation = next_gen;
+    let payload = LoadPayload {
+        path: PathBuf::from("/r/x"),
+        generation: next_gen,
+        depth: 1,
+        result: std::sync::Arc::new(Ok(Vec::<LoadedEntry>::new())),
+    };
+
+    let targets = tree.on_loaded(payload);
+    assert!(
+        targets.is_empty(),
+        "prefetch-triggered on_loaded must not cascade"
+    );
+    assert!(
+        !tree.prefetching_paths.contains(&PathBuf::from("/r/x")),
+        "prefetching_paths must be drained on arrival"
+    );
+}
+
+#[test]
+fn toggled_clears_a_pending_prefetch_entry() {
+    // If the user clicks to expand /r/x while /r/x's prefetch scan
+    // is still in flight, on_toggled must clear the prefetching
+    // flag so the eventual user-scan result triggers its own
+    // prefetch wave normally.
+    let mut tree = tree_with_mixed_children();
+    tree.prefetching_paths.insert(PathBuf::from("/r/x"));
+
+    let _ = tree.update(DirectoryTreeEvent::Toggled(PathBuf::from("/r/x")));
+    assert!(
+        !tree.prefetching_paths.contains(&PathBuf::from("/r/x")),
+        "user Toggled must remove the path from prefetching_paths \
+         so its eventual scan is treated as user-initiated"
+    );
+}

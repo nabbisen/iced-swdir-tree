@@ -60,10 +60,45 @@ impl DirectoryTree {
             DirectoryTreeEvent::Drag(msg) => self.on_drag(msg),
             DirectoryTreeEvent::DragCompleted { .. } => Task::none(),
             DirectoryTreeEvent::Loaded(payload) => {
-                self.on_loaded(payload);
-                Task::none()
+                // v0.5: `on_loaded` returns the paths (possibly empty)
+                // that the prefetch layer wants scanned next. The
+                // dispatcher is the layer that knows about the
+                // executor, so converting paths → scan Tasks happens
+                // here, not inside the handler.
+                let targets = self.on_loaded(payload);
+                self.issue_prefetch_scans(targets)
             }
         }
+    }
+
+    /// Issue background scans for a batch of prefetch targets.
+    ///
+    /// Each target is tracked in `prefetching_paths` so that when the
+    /// scan result arrives, [`on_loaded`](Self::on_loaded) knows to
+    /// drain the flag rather than triggering another cascade of
+    /// prefetches. Returns [`Task::none()`] if the input is empty —
+    /// the common case when prefetch is disabled or the user is
+    /// expanding a folder with no folder-children.
+    fn issue_prefetch_scans(
+        &mut self,
+        targets: Vec<std::path::PathBuf>,
+    ) -> Task<DirectoryTreeEvent> {
+        if targets.is_empty() {
+            return Task::none();
+        }
+        let tasks: Vec<Task<DirectoryTreeEvent>> = targets
+            .into_iter()
+            .map(|p| {
+                // Each prefetch gets its own generation so a later
+                // collapse-and-rescan of the same path invalidates
+                // exactly this stale result.
+                self.generation = self.generation.wrapping_add(1);
+                self.prefetching_paths.insert(p.clone());
+                let depth = depth_of(&self.config.root_path, &p);
+                super::walker::scan(self.executor.clone(), p, self.generation, depth)
+            })
+            .collect();
+        Task::batch(tasks)
     }
 }
 
@@ -94,12 +129,41 @@ impl DirectoryTree {
     /// up a window (overkill for unit-level tests) or bypassing the
     /// Task. This method does the latter.
     ///
+    /// v0.5: if `config.prefetch_per_parent > 0`, this helper also
+    /// drains the prefetch wave synchronously — the scans that the
+    /// real dispatcher would have dispatched to the executor are
+    /// instead run on this thread in sequence. That's slower than
+    /// production (serial rather than parallel) but gives tests
+    /// deterministic state to assert against without spinning up an
+    /// iced runtime.
+    ///
     /// Real applications should not call this on the main thread —
     /// `scan_dir` blocks on `readdir` — and should route events
     /// through [`DirectoryTree::update`] instead, which delegates the
     /// scan to a worker thread.
     #[doc(hidden)]
     pub fn __test_expand_blocking(&mut self, path: std::path::PathBuf) {
+        // User-initiated leg: scan path, merge, flip is_expanded.
+        self.__expand_blocking_impl(path.clone(), /* flip_expanded= */ true);
+
+        // v0.5 prefetch leg: drain any prefetch targets synchronously.
+        // We look at `select_prefetch_targets` *after* the merge, at
+        // which point the children are populated and the set is
+        // well-defined. Each target gets its `prefetching_paths` flag
+        // set first (so when its `on_loaded` runs, it correctly
+        // identifies itself as a prefetch result and won't cascade).
+        let targets = self.select_prefetch_targets(&path);
+        for t in targets {
+            self.prefetching_paths.insert(t.clone());
+            self.__expand_blocking_impl(t, /* flip_expanded= */ false);
+        }
+    }
+
+    /// Shared core of [`__test_expand_blocking`]: scan, build a
+    /// `LoadPayload`, optionally flip `is_expanded`, feed to
+    /// `on_loaded`. Does **not** look at prefetch — that's one level
+    /// up, in `__test_expand_blocking` proper.
+    fn __expand_blocking_impl(&mut self, path: std::path::PathBuf, flip_expanded: bool) {
         use super::message::LoadPayload;
         use std::sync::Arc;
 
@@ -120,15 +184,16 @@ impl DirectoryTree {
             result: Arc::new(result),
         };
 
-        // Flip is_expanded, then feed the payload through the real
-        // on_loaded so caching, error handling, etc. all go through
-        // the production code path.
-        if let Some(node) = self.root.find_mut(&path)
+        if flip_expanded
+            && let Some(node) = self.root.find_mut(&path)
             && node.is_dir
         {
             node.is_expanded = true;
         }
-        self.on_loaded(payload);
+        // The return value (prefetch targets) is intentionally
+        // discarded here: the caller — `__test_expand_blocking` —
+        // computes targets itself from the post-merge tree state.
+        let _targets = self.on_loaded(payload);
     }
 }
 
