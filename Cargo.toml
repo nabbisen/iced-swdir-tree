@@ -1,6 +1,6 @@
 [package]
 name = "iced-swdir-tree"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 description = "iced widget for file tree powered by swdir, supporting selection, lazy loading and filtering."
 authors = ["nabbisen <nabbisen@scqr.net>"]

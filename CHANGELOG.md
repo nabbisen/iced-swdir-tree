@@ -5,6 +5,59 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.2] — 2026-04-24
+
+**Documentation restructure. No code changes, no test changes.**
+
+### Rationale
+
+`README.md` had grown to just over 500 lines — readable only if
+you already knew what you were looking for, and heavy for the
+crates.io landing page. The fix is standard practice: keep the
+README as a concise hero + overview + quick start + pointers,
+and move each topic into its own page under `docs/`.
+
+### Changed
+
+- **`README.md` → 140 lines.** Now a pure landing page:
+  GitHub-style hero with badges, overview, "when to use it",
+  quick start (install + minimal app + icons feature), design
+  notes, and a curated link index into `docs/` plus
+  `CHANGELOG.md` / `ROADMAP.md`.
+- **`docs/` directory added with 10 topic pages:**
+  - `docs/README.md` — index (lands here when GitHub renders
+    the folder).
+  - `docs/features.md`, `docs/configuration.md`,
+    `docs/events.md`.
+  - `docs/multi-select.md`, `docs/drag-and-drop.md`,
+    `docs/keyboard.md`.
+  - `docs/prefetch.md`, `docs/search.md`, `docs/executor.md`.
+  - `docs/ARCHITECTURE.md` and `docs/DEVELOPMENT.md` — moved
+    from repo root. Cross-links to `CHANGELOG.md` / `ROADMAP.md`
+    updated to use `../` relative paths.
+
+Each topic page is self-contained (runnable examples, full
+semantics, all relevant links) so direct landings from docs.rs
+search results or external bookmarks stay useful. Content is
+preserved verbatim — no edits except heading-level adjustments
+and inter-page link rewrites.
+
+### Cleaned up
+
+- **README license section now matches `Cargo.toml`.** The
+  previous README claimed a dual MIT-OR-Apache-2.0 license and
+  linked `LICENSE-MIT` / `LICENSE-APACHE` files that don't
+  exist; `Cargo.toml` specifies Apache-2.0 only. Fixed the
+  badge and the section to reflect reality.
+
+### Not changed
+
+- **Public API is byte-identical to 0.6.1.** No new types, no
+  renamed methods, no behaviour changes. Downstream apps that
+  compile against 0.6.1 compile against 0.6.2 with no edits.
+- **Tests unchanged.** Still 141 tests (80 unit + 60
+  integration + 1 doctest), still all green.
+
 ## [0.6.1] — 2026-04-24
 
 Adds a **safety valve for v0.5 prefetch**: the widget now refuses

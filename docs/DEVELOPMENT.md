@@ -25,5 +25,5 @@ descent, on-loaded-recomputes), and v0.6.1 prefetch safety valve
 (default-skips-.git/node_modules/target, custom-replaces-default,
 empty-disables, exact-basename-not-substring, ASCII-case-
 insensitive, user-click-still-scans-skipped). See the
-[CHANGELOG](CHANGELOG.md) for the per-release breakdown and
-[ROADMAP](ROADMAP.md) for what's next.
+[CHANGELOG](../CHANGELOG.md) for the per-release breakdown and
+[ROADMAP](../ROADMAP.md) for what's next.

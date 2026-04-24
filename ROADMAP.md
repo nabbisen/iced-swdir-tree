@@ -70,6 +70,13 @@ case-insensitive. New `with_prefetch_skip(iter)` builder and
 public `DEFAULT_PREFETCH_SKIP` constant. Skip applies only to
 prefetch — explicit user clicks still expand any folder.
 
+### v0.6.2 — Documentation restructure ✅
+See [CHANGELOG](CHANGELOG.md#062--2026-04-24). Pure
+documentation release. `README.md` shrank from ~500 to ~140
+lines; 10 topic pages live under `docs/`; `ARCHITECTURE.md` and
+`DEVELOPMENT.md` moved to `docs/`. No code or test changes,
+public API byte-identical.
+
 ## Remaining for v1.0
 
 ### v0.7.0 — Custom icon themes via a trait

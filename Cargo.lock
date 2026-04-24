@@ -1214,7 +1214,7 @@ dependencies = [
 
 [[package]]
 name = "iced-swdir-tree"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "iced",
  "lucide-icons",
