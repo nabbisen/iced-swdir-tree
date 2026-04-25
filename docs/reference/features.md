@@ -45,10 +45,12 @@ dedicated reference page with concrete examples.
 - **Error tolerance.** Permission denials, missing paths, and
   symlink cycles are surfaced as per-node errors that the view
   greys out — no panics, no UI freezes.
-- **Optional lucide icons.** Disabled by default; enable the
-  `icons` feature to pull in real vector glyphs. The public API
-  is identical in both modes. See
-  [Quick start · Icons](../../README.md#quick-start).
+- **Pluggable icon themes.** Each folder/file/caret/error glyph
+  comes from a configurable [`IconTheme`](../guide/icon-themes.md).
+  Stock `UnicodeTheme` is always available; `LucideTheme` ships
+  behind the `icons` feature with the bundled lucide TTF. Your
+  own theme — Material, Heroicons, app-specific labels — plugs
+  in through the trait.
 - **Cross-platform.** Hidden-file detection follows OS
   conventions: dotfile on Unix, `HIDDEN` attribute plus dotfile
   fallback on Windows, dotfile elsewhere.

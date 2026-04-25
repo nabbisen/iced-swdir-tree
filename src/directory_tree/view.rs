@@ -26,7 +26,7 @@ use iced::{
 
 use super::DirectoryTree;
 use super::drag::DragMsg;
-use super::icon::{Icon, render as icon_render};
+use super::icon::{IconRole, IconTheme, render as icon_render};
 use super::message::DirectoryTreeEvent;
 use super::node::TreeNode;
 
@@ -60,11 +60,16 @@ impl DirectoryTree {
         // visible paths so it can bypass `is_expanded` — a collapsed
         // ancestor of a match should render as if expanded.
         let search_visible = self.search.as_ref().map(|s| &s.visible_paths);
+        // v0.7: the icon theme is stored on the tree; hand it
+        // through as `&dyn` so render_node / render_row can query
+        // it without needing to thread feature flags.
+        let icon_theme: &dyn IconTheme = self.icon_theme.as_ref();
         render_node(
             &self.root,
             0,
             drop_target,
             search_visible,
+            icon_theme,
             on_event,
             &mut rows,
         );
@@ -89,6 +94,7 @@ fn render_node<'a, Message, F>(
     depth: u32,
     drop_target: Option<&Path>,
     search_visible: Option<&std::collections::HashSet<std::path::PathBuf>>,
+    icon_theme: &dyn IconTheme,
     on_event: F,
     out: &mut Vec<Element<'a, Message>>,
 ) where
@@ -102,7 +108,13 @@ fn render_node<'a, Message, F>(
         return;
     }
     let is_drop_target = drop_target == Some(node.path.as_path());
-    out.push(render_row(node, depth, is_drop_target, on_event));
+    out.push(render_row(
+        node,
+        depth,
+        is_drop_target,
+        icon_theme,
+        on_event,
+    ));
 
     // Descent rule:
     //   - Search active: always descend (children are gated by the
@@ -115,7 +127,15 @@ fn render_node<'a, Message, F>(
     };
     if descend {
         for child in &node.children {
-            render_node(child, depth + 1, drop_target, search_visible, on_event, out);
+            render_node(
+                child,
+                depth + 1,
+                drop_target,
+                search_visible,
+                icon_theme,
+                on_event,
+                out,
+            );
         }
     }
 }
@@ -125,6 +145,7 @@ fn render_row<'a, Message, F>(
     node: &'a TreeNode,
     depth: u32,
     is_drop_target: bool,
+    icon_theme: &dyn IconTheme,
     on_event: F,
 ) -> Element<'a, Message>
 where
@@ -141,15 +162,15 @@ where
 
     // The folder/file icon.
     let type_icon: Element<'a, Message> = if node.error.is_some() {
-        icon_render::<Message>(Icon::Error)
+        icon_render::<Message>(icon_theme, IconRole::Error)
     } else if node.is_dir {
         if node.is_expanded {
-            icon_render::<Message>(Icon::FolderOpen)
+            icon_render::<Message>(icon_theme, IconRole::FolderOpen)
         } else {
-            icon_render::<Message>(Icon::FolderClosed)
+            icon_render::<Message>(icon_theme, IconRole::FolderClosed)
         }
     } else {
-        icon_render::<Message>(Icon::File)
+        icon_render::<Message>(icon_theme, IconRole::File)
     };
 
     // The label itself. Permission-denied rows render in a muted
@@ -174,13 +195,13 @@ where
     // the inner press. The caret handles Toggled; the rest of the
     // row (icon + label inside a second button) handles Selected.
     let caret: Element<'a, Message> = if node.is_dir {
-        let caret_icon = if node.is_expanded {
-            Icon::CaretDown
+        let caret_role = if node.is_expanded {
+            IconRole::CaretDown
         } else {
-            Icon::CaretRight
+            IconRole::CaretRight
         };
         let path = node.path.clone();
-        button(icon_render::<Message>(caret_icon))
+        button(icon_render::<Message>(icon_theme, caret_role))
             .padding(2)
             .style(button::text)
             .on_press(on_event(DirectoryTreeEvent::Toggled(path)))

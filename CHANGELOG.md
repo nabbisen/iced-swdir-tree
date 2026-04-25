@@ -5,6 +5,97 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] — 2026-04-24
+
+**Final v1.0 gate: custom icon themes via a trait.** With this
+release the widget's last hard-coded dependency (lucide icons)
+becomes pluggable. The API surface is now frozen — v1.0 will
+follow as a version-number-only release.
+
+### Added
+
+- **`IconTheme` trait** (object-safe, `Send + Sync + Debug`)
+  with a single method:
+  ```rust
+  fn glyph(&self, role: IconRole) -> IconSpec;
+  ```
+- **`IconRole`** — `#[non_exhaustive]` enum of six semantic
+  positions: `FolderClosed`, `FolderOpen`, `File`, `Error`,
+  `CaretRight`, `CaretDown`. Future minor releases may add
+  variants (`Symlink`, `Hidden`, `Loading`, …), so external
+  themes must include a `_ =>` fallback when matching.
+- **`IconSpec`** — the data an `IconTheme` returns per role:
+  `glyph: Cow<'static, str>`, `font: Option<iced::Font>`,
+  `size: Option<f32>`. Public fields for `const`-style themes;
+  `new` / `with_font` / `with_size` builder methods for
+  ergonomics.
+- **`UnicodeTheme`** — always-available stock theme rendering
+  short Unicode symbols (📁 📂 📄 ⚠ ▸ ▾) in the default system
+  font.
+- **`LucideTheme`** — stock theme rendering real lucide vector
+  glyphs via the bundled `LUCIDE_FONT_BYTES` TTF. Gated on the
+  `icons` feature.
+- **`DirectoryTree::with_icon_theme(Arc<dyn IconTheme>)`** —
+  builder to plug in a custom theme.
+- **`examples/icon_theme.rs`** — a three-way theme switcher
+  (Unicode / Label / Ascii) demonstrating the full trait.
+- **8 new unit tests** in `src/directory_tree/icon/tests.rs`
+  (stock-theme glyphs, no-font-on-UnicodeTheme, lucide font
+  set, single-char lucide glyphs, IconSpec builder,
+  `Into<Cow<'static, str>>` accepts both variants, custom theme
+  implementation, object-safety, default-theme completeness).
+- **2 additional unit tests** gated on `icons` covering
+  `LucideTheme` behaviour.
+- **5 new integration tests** in `tests/icon_theme.rs`
+  (default-theme-installed, `Arc<dyn>` accepted, view calls the
+  installed theme via a `CountingTheme` fake, theme survives
+  filter change, `Arc` is cheaply cloneable).
+
+### Changed
+
+- **`DirectoryTree` gained a `icon_theme: Arc<dyn IconTheme>`
+  field.** Initialized via `icon::default_theme()` in `new()`
+  to the stock theme for the feature configuration
+  (`LucideTheme` with `icons`, `UnicodeTheme` without).
+- **`src/directory_tree/view.rs`** threads `&dyn IconTheme`
+  through `render_node` and `render_row`. The old feature-gated
+  `render_text` / `render_lucide` fallbacks were deleted —
+  `icon::render(theme, role)` is the single dispatch point.
+- **The `icons` feature's purpose shrinks.** It now controls
+  whether `LucideTheme` + the lucide TTF are pulled in; apps
+  that plug in their own theme can turn it off for a slimmer
+  binary:
+  ```toml
+  iced-swdir-tree = { version = "0.7", default-features = false }
+  ```
+
+### Public API decisions (frozen for v1.0)
+
+- **Trait returns data, not widgets.** `IconSpec` is plain
+  fields, not an `Element`; keeps the trait object-safe and
+  lets the widget own layout/sizing.
+- **`Arc<dyn IconTheme>`, not `Box<dyn>`.** Matches the
+  `Arc<dyn ScanExecutor>` convention already in the crate.
+- **`IconRole` is `#[non_exhaustive]`.** Future-proofs the role
+  set for `Symlink` / `Hidden` / `Loading` additions without
+  breaking existing themes.
+- **`IconSpec` is NOT `#[non_exhaustive]`.** The three-field
+  shape is frozen for v1.0; adding fields later would be a
+  breaking 2.0 change.
+
+### Breaking changes
+
+None to downstream apps that use the builder/API. The internal
+`Icon` enum was made public as `IconRole` and the
+feature-gated `render` helpers were consolidated behind the
+trait — but these were never part of the public API.
+
+### Test counts
+
+- **154 total** (was 141): 88 unit + 65 integration + 1 doctest.
+  Added 8 unit tests, 2 feature-gated unit tests, and 5
+  integration tests.
+
 ## [0.6.3] — 2026-04-24
 
 **Documentation reorganization. No code changes, no test changes.**

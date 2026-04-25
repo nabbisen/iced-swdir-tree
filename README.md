@@ -43,7 +43,7 @@ file-chooser is almost certainly a better fit.
 ```toml
 [dependencies]
 iced = "0.14"
-iced-swdir-tree = "0.6"
+iced-swdir-tree = "0.7"
 ```
 
 ```rust,no_run
@@ -87,7 +87,7 @@ For real lucide glyphs instead of the Unicode-symbol fallback,
 enable the `icons` feature and register the bundled font:
 
 ```toml
-iced-swdir-tree = { version = "0.6", features = ["icons"] }
+iced-swdir-tree = { version = "0.7", features = ["icons"] }
 ```
 
 ```rust,ignore
@@ -96,9 +96,11 @@ iced::application(App::new, App::update, App::view)
     .run()
 ```
 
+To plug in your own icon set (Material, Heroicons, custom labels, …) implement [`IconTheme`](docs/guide/icon-themes.md) and pass it to `with_icon_theme` — the `icons` feature can stay off in that case, shaving the lucide TTF out of your binary.
+
 Working apps live in [`examples/`](examples/): `keyboard_nav`,
-`multi_select`, `drag_drop`, `search`. Run them with
-`cargo run --example <name>`.
+`multi_select`, `drag_drop`, `search`, `icon_theme`. Run them
+with `cargo run --example <name>`.
 
 ## Design notes
 
@@ -135,6 +137,7 @@ Working apps live in [`examples/`](examples/): `keyboard_nav`,
   · [Incremental search](docs/guide/incremental-search.md)
   · [Parallel pre-expansion](docs/guide/prefetch.md)
   · [Custom scan executor](docs/guide/custom-executor.md)
+  · [Icon themes](docs/guide/icon-themes.md)
 - **Reference** (look something up) — [Features](docs/reference/features.md)
   · [Events](docs/reference/events.md)
 - **Internals** (understand or contribute) — [Architecture](docs/internals/architecture.md)

@@ -14,6 +14,7 @@ let tree = DirectoryTree::new(PathBuf::from("."))
 | `with_filter(f)` | Builder form of `set_filter`. |
 | `with_max_depth(d)` | Refuse to load below depth `d` (0 = root children only). |
 | `with_executor(e)` | Route blocking scans through a custom [`ScanExecutor`](custom-executor.md). |
+| `with_icon_theme(t)` | Replace the icon theme with a custom [`IconTheme`](icon-themes.md). |
 | `with_prefetch_limit(n)` | Enable speculative pre-scanning of folder-children. See [Parallel pre-expansion](prefetch.md). |
 | `with_prefetch_skip(iter)` | Replace the default skip list. See [the safety valve](prefetch.md#safety-valve-the-skip-list). |
 | `set_filter(f)` | Change the filter at runtime. Re-derives from cache; no I/O. |

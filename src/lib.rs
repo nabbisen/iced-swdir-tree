@@ -93,10 +93,15 @@ pub use crate::directory_tree::{
     drag::DragMsg,
     error::Error,
     executor::{ScanExecutor, ScanFuture, ScanJob, ThreadExecutor},
+    icon::{IconRole, IconSpec, IconTheme, UnicodeTheme},
     message::{DirectoryTreeEvent, LoadPayload},
     node::TreeNode,
     selection::SelectionMode,
 };
+
+#[cfg(feature = "icons")]
+#[cfg_attr(docsrs, doc(cfg(feature = "icons")))]
+pub use crate::directory_tree::icon::LucideTheme;
 
 #[cfg(feature = "icons")]
 #[cfg_attr(docsrs, doc(cfg(feature = "icons")))]

@@ -224,3 +224,48 @@ Design constraints the implementation settled:
 - **Click-during-search doesn't escape.** The widget stays
   narrowed. Documented limitation; a future opt-in escape mode is
   possible but not default.
+
+## Icon themes (v0.7+)
+
+Icons are rendered via a three-layer abstraction in
+`src/directory_tree/icon.rs`:
+
+1. **`IconRole`** — a public `#[non_exhaustive]` enum enumerating
+   the six semantic icon positions the widget needs
+   (`FolderClosed`, `FolderOpen`, `File`, `Error`, `CaretRight`,
+   `CaretDown`). Being `#[non_exhaustive]` from outside the crate
+   means external themes must `match` with a `_ =>` fallback;
+   in-crate stock themes match exhaustively.
+2. **`IconSpec`** — a data struct describing how to render one
+   icon: `glyph: Cow<'static, str>`, `font: Option<iced::Font>`,
+   `size: Option<f32>`. Public fields for `const`-style themes,
+   builder methods (`new` / `with_font` / `with_size`) for
+   ergonomics.
+3. **`IconTheme`** — a `Send + Sync + Debug` trait with a single
+   `glyph(&self, role: IconRole) -> IconSpec` method. Object-safe
+   (`Arc<dyn IconTheme>` works).
+
+`DirectoryTree` holds the theme in `icon_theme:
+Arc<dyn IconTheme>`, matching the existing `Arc<dyn ScanExecutor>`
+pattern. `DirectoryTree::new` picks a stock default via
+`icon::default_theme()` — `LucideTheme` when the `icons` feature
+is enabled, `UnicodeTheme` otherwise.
+
+View-layer dispatch is trivial: `view::render_node` and
+`view::render_row` both gained a `&dyn IconTheme` parameter that
+the row-render code passes into `icon::render(theme, role)`. That
+helper calls `theme.glyph(role)`, builds an `iced::widget::text`
+with the resulting glyph/font/size, and returns an `Element`. The
+old `Icon` enum and feature-gated `render_text` / `render_lucide`
+fallbacks were deleted — the trait replaces both.
+
+The public re-export surface in `lib.rs` is:
+
+- `IconRole`, `IconSpec`, `IconTheme`, `UnicodeTheme` — always.
+- `LucideTheme` — gated on `icons` feature, with `#[cfg_attr(docsrs, doc(cfg(feature = "icons")))]`.
+
+`LUCIDE_FONT_BYTES` is still re-exported on `icons` — `LucideTheme`
+needs the app to register the font at iced startup.
+
+With the trait introduced and v0.7 shipped, v1.0 can freeze the
+API: no more pre-1.0 minors are planned.

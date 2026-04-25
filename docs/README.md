@@ -35,6 +35,9 @@ Building something specific? Start here.
   safety valve.
 - [Custom scan executor](guide/custom-executor.md) —
   `ScanExecutor`, `ThreadExecutor`, when to swap.
+- [Icon themes](guide/icon-themes.md) — the `IconTheme` trait,
+  the stock `UnicodeTheme` / `LucideTheme`, how to implement
+  your own.
 
 ## Reference
 

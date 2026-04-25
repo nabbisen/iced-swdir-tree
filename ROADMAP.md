@@ -1,11 +1,11 @@
 # Roadmap
 
-Current: **v0.6.3** · Next: **v0.7.0** · **v1.0 is one release away.**
+Current: **v0.7.0** · Next: **v1.0.0** (API freeze — no code changes planned).
 
-Six feature milestones ship as minor-version releases; patch
-releases handle internal refactors and documentation. Each minor
-lands as a discrete release so downstream apps can upgrade one
-feature at a time.
+Seven feature milestones have shipped as minor-version releases;
+patch releases have handled internal refactors, documentation,
+and safety fixes. v0.7 was the last pre-1.0 minor — the public
+API surface is now complete and frozen pending the 1.0 release.
 
 ## Status at a glance
 
@@ -18,11 +18,11 @@ feature at a time.
 | `0.5.0`  | ✅ shipped | Parallel pre-expansion (`with_prefetch_limit`).            |
 | `0.6.0`  | ✅ shipped | Incremental search with real-time filtering.              |
 | `0.6.1`  | ✅ shipped | Prefetch safety valve (`.git` / `node_modules` / …).       |
-| `0.7.0`  | 🚧 planned | Custom icon themes via an `IconTheme` trait.               |
-| `1.0.0`  | 🎯 goal    | Stable public API; no roadmap changes before or during.    |
+| `0.7.0`  | ✅ shipped | Custom icon themes via an `IconTheme` trait.               |
+| `1.0.0`  | 🎯 next    | API freeze release. No code changes from `0.7.0`.          |
 
-Patch releases on the way (internal refactors, docs): `0.4.1`,
-`0.4.2`, `0.6.2`, `0.6.3`. Summaries below.
+Patch releases (internal refactors, docs): `0.4.1`, `0.4.2`,
+`0.6.2`, `0.6.3`. Summaries below.
 
 ---
 
@@ -76,6 +76,17 @@ every ancestor of every match. Selection survives search. New
 click-to-expand during search does not escape the filter; clear
 the query first to explore.
 
+### v0.7.0 — Custom icon themes via a trait ✅
+See [CHANGELOG](CHANGELOG.md#070--2026-04-24). Introduces the
+`IconTheme` trait (object-safe, `Send + Sync + Debug`), the
+`IconRole` enum (`#[non_exhaustive]`), and the `IconSpec` data
+struct. Two stock themes: `UnicodeTheme` (always available) and
+`LucideTheme` (behind `icons` feature). New
+`DirectoryTree::with_icon_theme(Arc<dyn IconTheme>)` builder
+and `examples/icon_theme.rs`. The `icons` feature's purpose
+shrinks to "ship lucide TTF + preset" — apps that plug in their
+own theme can turn it off for a slimmer binary.
+
 ## Shipped — safety patches
 
 ### v0.6.1 — Prefetch safety valve ✅
@@ -121,37 +132,27 @@ lowercase-kebab-case; two renamed for clarity (`executor.md` →
 
 ---
 
-## Remaining for v1.0
+## Next: v1.0.0
 
-### v0.7.0 — Custom icon themes via a trait 🚧
-The one outstanding feature before v1.0. Today the widget's
-icons are hard-coded to lucide glyphs (or Unicode fallbacks
-when the `icons` feature is off). v0.7 introduces an
-`IconTheme` trait returning a glyph (and optional font) for
-each logical role:
+With v0.7 shipped, every roadmap item originally planned for
+v1.0 has landed. The 1.0 release is an API-freeze marker, not a
+new feature release: it takes whatever is at v0.7.x (plus any
+bug fixes that accumulate) and stamps it as the stable surface.
 
-```rust,ignore
-pub trait IconTheme {
-    fn glyph(&self, role: IconRole) -> IconSpec;
-}
+What 1.0 commits to:
 
-pub enum IconRole {
-    FolderClosed,
-    FolderOpen,
-    File,
-    Symlink,
-    Error,
-}
-```
-
-Keeps the `icons` feature flag as a convenient
-`LucideTheme`-preset default, but removes the hard-coded
-dependency so apps can plug in Material, Heroicons, or their
-own custom glyphs. Post-0.7 the `icons` feature's purpose
-shrinks to "ship the lucide TTF + preset"; consumers that
-bring their own theme can turn it off.
-
-After v0.7 ships, the API surface is frozen for v1.0.
+- **No breaking changes to existing public APIs** until 2.0.
+  New functionality is added via additional methods/types that
+  don't alter the existing surface.
+- **`IconSpec`'s field shape is frozen.** Adding fields is
+  breaking and waits for a hypothetical 2.0.
+- **`IconRole` and any other `#[non_exhaustive]` enums may grow
+  new variants** in 1.x minor releases. External `match`es
+  already need `_ =>` fallbacks for these; that contract
+  continues into 1.x.
+- **`DirectoryTree`'s builder-chain** (`with_filter`,
+  `with_max_depth`, `with_executor`, `with_prefetch_limit`,
+  `with_prefetch_skip`, `with_icon_theme`) is stable as-is.
 
 ---
 

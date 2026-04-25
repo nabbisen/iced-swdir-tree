@@ -7,7 +7,7 @@ cargo test --all-features
 cargo clippy --all-targets --all-features
 ```
 
-The crate ships 141 tests (80 unit + 60 integration + 1 doctest)
+The crate ships 154 tests (88 unit + 65 integration + 1 doctest)
 covering every filter mode, expand/collapse round-trips, both
 single- and multi-select (Replace / Toggle / ExtendRange, with
 survival across runtime filter changes), stale-result rejection,
@@ -21,9 +21,13 @@ limit/max_depth interaction, instant-fast-path on prefetched
 click), v0.6 incremental search (case-insensitive basename
 matching, multi-subtree, empty-clears, case-insensitivity,
 selection preservation, filter-change-re-runs, collapsed-subtree
-descent, on-loaded-recomputes), and v0.6.1 prefetch safety valve
+descent, on-loaded-recomputes), v0.6.1 prefetch safety valve
 (default-skips-.git/node_modules/target, custom-replaces-default,
 empty-disables, exact-basename-not-substring, ASCII-case-
-insensitive, user-click-still-scans-skipped). See the
+insensitive, user-click-still-scans-skipped), and v0.7 icon
+themes (UnicodeTheme/LucideTheme stock glyphs, IconSpec builder,
+custom theme pluggability, object-safety of `Arc<dyn IconTheme>`,
+and view-layer dispatch via a CountingTheme that verifies the
+widget actually consults the theme). See the
 [CHANGELOG](../../CHANGELOG.md) for the per-release breakdown and
 [ROADMAP](../../ROADMAP.md) for what's next.

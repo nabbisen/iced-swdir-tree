@@ -128,6 +128,21 @@ pub struct DirectoryTree {
     ///
     /// [`DirectoryTree::set_search_query`]: Self::set_search_query
     pub(crate) search: Option<search::SearchState>,
+    /// **v0.7:** the icon theme used by the view.
+    ///
+    /// Defaults to the crate's stock theme for the enabled feature
+    /// set ([`icon::LucideTheme`] when `icons` is on,
+    /// [`icon::UnicodeTheme`] when off). Applications can install
+    /// their own by implementing [`icon::IconTheme`] and calling
+    /// [`DirectoryTree::with_icon_theme`].
+    ///
+    /// Stored as `Arc<dyn IconTheme>` (matching the existing
+    /// `Arc<dyn ScanExecutor>` pattern) so `DirectoryTree` stays
+    /// trivially cloneable if callers ever need that, and so the
+    /// view layer can borrow the theme via `&dyn` without cloning.
+    ///
+    /// [`DirectoryTree::with_icon_theme`]: Self::with_icon_theme
+    pub(crate) icon_theme: Arc<dyn icon::IconTheme>,
     /// Pluggable executor that runs blocking `scan_dir` calls.
     ///
     /// Defaults to [`ThreadExecutor`] (one `std::thread::spawn` per
@@ -168,6 +183,7 @@ impl DirectoryTree {
             drag: None,
             prefetching_paths: std::collections::HashSet::new(),
             search: None,
+            icon_theme: icon::default_theme(),
             executor: Arc::new(ThreadExecutor),
         }
     }
@@ -302,6 +318,65 @@ impl DirectoryTree {
     /// [`ThreadExecutor`]: crate::ThreadExecutor
     pub fn with_executor(mut self, executor: Arc<dyn ScanExecutor>) -> Self {
         self.executor = executor;
+        self
+    }
+
+    /// **v0.7:** replace the icon theme.
+    ///
+    /// Install an [`IconTheme`](crate::IconTheme) implementation to
+    /// control which glyph, font, and size the view uses for each
+    /// [`IconRole`](crate::IconRole) (folder-closed / folder-open /
+    /// file / caret-right / caret-down / error).
+    ///
+    /// The crate ships two stock themes:
+    ///
+    /// * [`UnicodeTheme`](crate::UnicodeTheme) — always available,
+    ///   renders short Unicode symbols (📁 📂 📄 ⚠ ▸ ▾). Default
+    ///   when the `icons` feature is disabled.
+    /// * [`LucideTheme`](crate::LucideTheme) — available with the
+    ///   `icons` feature, renders real lucide vector glyphs.
+    ///   Default when `icons` is enabled.
+    ///
+    /// You don't need to call this if you're happy with the stock
+    /// default — `DirectoryTree::new` picks the right one for your
+    /// feature configuration automatically.
+    ///
+    /// Custom themes implement the [`IconTheme`](crate::IconTheme)
+    /// trait. A minimal example:
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    /// use iced_swdir_tree::{
+    ///     DirectoryTree, IconRole, IconSpec, IconTheme,
+    /// };
+    ///
+    /// #[derive(Debug)]
+    /// struct LabelTheme;
+    ///
+    /// impl IconTheme for LabelTheme {
+    ///     fn glyph(&self, role: IconRole) -> IconSpec {
+    ///         let label: &'static str = match role {
+    ///             IconRole::FolderClosed => "[D]",
+    ///             IconRole::FolderOpen => "[O]",
+    ///             IconRole::File => "[F]",
+    ///             IconRole::Error => "[!]",
+    ///             IconRole::CaretRight => ">",
+    ///             IconRole::CaretDown => "v",
+    ///             _ => "?",
+    ///         };
+    ///         IconSpec::new(label)
+    ///     }
+    /// }
+    ///
+    /// let tree = DirectoryTree::new(".".into())
+    ///     .with_icon_theme(Arc::new(LabelTheme));
+    /// ```
+    ///
+    /// Note the `_ =>` fallback: [`IconRole`](crate::IconRole) is
+    /// `#[non_exhaustive]` so new variants may be added in future
+    /// minor releases.
+    pub fn with_icon_theme(mut self, theme: Arc<dyn icon::IconTheme>) -> Self {
+        self.icon_theme = theme;
         self
     }
 
