@@ -1,9 +1,9 @@
 [package]
 name = "iced-swdir-tree"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 description = "iced widget for file tree powered by swdir, supporting selection, lazy loading and filtering."
-authors = ["nabbisen <nabbisen@scqr.net>"]
+authors = ["nabbisen"]
 license = "Apache-2.0"
 categories = ["gui", "filesystem"]
 keywords = ["iced", "widget", "directory", "tree", "filesystem"]
