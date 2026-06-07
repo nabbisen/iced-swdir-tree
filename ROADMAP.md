@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: **v0.7.0** · Next: **v1.0.0** (API freeze — no code changes planned).
+Current: **v0.7.1** · Next: **v1.0.0** (API freeze — no code changes planned).
 
 Seven feature milestones have shipped as minor-version releases;
 patch releases have handled internal refactors, documentation,
@@ -19,6 +19,8 @@ API surface is now complete and frozen pending the 1.0 release.
 | `0.6.0`  | ✅ shipped | Incremental search with real-time filtering.              |
 | `0.6.1`  | ✅ shipped | Prefetch safety valve (`.git` / `node_modules` / …).       |
 | `0.7.0`  | ✅ shipped | Custom icon themes via an `IconTheme` trait.               |
+| `0.7.1`  | ✅ shipped | Dependencies updated.                                      |
+| `0.7.2`  | ✅ shipped | External design docs added. Dependencies updated.          |
 | `1.0.0`  | 🎯 next    | API freeze release. No code changes from `0.7.0`.          |
 
 Patch releases (internal refactors, docs): `0.4.1`, `0.4.2`,
@@ -86,6 +88,10 @@ struct. Two stock themes: `UnicodeTheme` (always available) and
 and `examples/icon_theme.rs`. The `icons` feature's purpose
 shrinks to "ship lucide TTF + preset" — apps that plug in their
 own theme can turn it off for a slimmer binary.
+
+### v0.7.1 — Dependencies updated ✅
+
+### v0.7.2 — External design docs added. Dependencies updated ✅
 
 ## Shipped — safety patches
 

@@ -5,6 +5,14 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.7.2] — 2026-06-07
+
+**External design docs** added. Dependencies updated.
+
+## [0.7.1] — 2026-04-30
+
+Dependencies updated.
+
 ## [0.7.0] — 2026-04-24
 
 **Final v1.0 gate: custom icon themes via a trait.** With this
