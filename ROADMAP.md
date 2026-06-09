@@ -1,11 +1,12 @@
 # Roadmap
 
-Current: **v0.8.0** · Next: **v1.0.0** (API freeze — no code changes planned).
+Current: **v0.9.0** · Future: **v1.0.0** (API freeze — no code changes planned).
 
-Seven feature milestones have shipped as minor-version releases;
+Eight feature milestones have shipped as minor-version releases;
 patch releases have handled internal refactors, documentation,
-and safety fixes. v0.7 was the last pre-1.0 minor — the public
-API surface is now complete and frozen pending the 1.0 release.
+and safety fixes. v0.9 closes the last open RFC 001 deferral
+(ItemTree drag-and-drop, RFC 002). v1.0 freezes the API surface
+that now includes drag-and-drop for both widgets.
 
 ## Status at a glance
 
@@ -22,7 +23,8 @@ API surface is now complete and frozen pending the 1.0 release.
 | `0.7.1`  | ✅ shipped | Dependencies updated.                                      |
 | `0.7.2`  | ✅ shipped | Framework-agnostic design documents (`docs/design/`).      |
 | `0.8.0`  | ✅ shipped | Generic item tree — `ItemTree<T>` (RFC 001).               |
-| `1.0.0`  | 🎯 next    | API freeze release. No code changes from `0.8.x`.          |
+| `0.9.0`  | ✅ shipped | Drag-and-drop for `ItemTree<T>` (RFC 002).                 |
+| `1.0.0`  | 🎯 next    | API freeze release. No code changes from `0.9.x`.          |
 
 Patch releases (internal refactors, docs): `0.4.1`, `0.4.2`,
 `0.6.2`, `0.6.3`. Summaries below.
@@ -154,9 +156,18 @@ multi-select / search / icon-theme surface as `DirectoryTree`.
 No async I/O. Motivated by the `layered` Markdown editor's
 section-outline use case.
 
+### v0.9.0 — Drag-and-drop for `ItemTree<T>` ✅
+See [CHANGELOG](CHANGELOG.md#090--2026-06-09). Implements
+RFC 002. Adds opt-in (`with_drag_and_drop(true)`) drag-and-drop
+reorder/nest to `ItemTree<T>` via a `Before`/`Into`/`After`
+drop-position model, resolving the deferral in RFC 001 [D10].
+Validity is checked via an O(depth) parent-map chain walk
+(snapshotted once at drag start). Includes Escape-to-cancel,
+deferred-selection, 27 new tests, and a worked example.
+
 ## Next: v1.0.0
 
-With v0.8.0 shipped, every roadmap item originally planned for
+With v0.9.0 shipped, every roadmap item originally planned for
 v1.0 has landed. The 1.0 release is an API-freeze marker, not a
-new feature release: it takes whatever is at v0.8.x and stamps
+new feature release: it takes whatever is at v0.9.x and stamps
 it as the stable surface.

@@ -217,3 +217,45 @@ pub(crate) fn clear_selection<T>(node: &mut ItemNodeState<T>) {
         clear_selection(child);
     }
 }
+
+/// Collect all `NodeId`s in pre-order (parents before children,
+/// children in declaration order) into `out`.
+///
+/// Used by the drag machinery to report a multi-node drag's
+/// `sources` in deterministic tree order rather than selection
+/// order (RFC 002 [D5]).
+pub(crate) fn collect_all_ids_ordered<T>(node: &ItemNodeState<T>, out: &mut Vec<NodeId>) {
+    out.push(node.id);
+    for child in &node.children {
+        collect_all_ids_ordered(child, out);
+    }
+}
+
+/// Build a child → parent map for every live node, with the root
+/// mapping to `None`.
+///
+/// Snapshotted once when a drag begins so that the descendant /
+/// cycle validity check can walk a node's ancestor chain in
+/// O(depth) without borrowing the live tree (RFC 002 [D6]). This
+/// is the `NodeId` analogue of `DirectoryTree`'s free O(1)
+/// `PathBuf::starts_with` ancestry test.
+pub(crate) fn build_parent_map<T>(
+    root: Option<&ItemNodeState<T>>,
+) -> std::collections::HashMap<NodeId, Option<NodeId>> {
+    let mut map = std::collections::HashMap::new();
+    if let Some(r) = root {
+        fill_parent_map(r, None, &mut map);
+    }
+    map
+}
+
+fn fill_parent_map<T>(
+    node: &ItemNodeState<T>,
+    parent: Option<NodeId>,
+    out: &mut std::collections::HashMap<NodeId, Option<NodeId>>,
+) {
+    out.insert(node.id, parent);
+    for child in &node.children {
+        fill_parent_map(child, Some(node.id), out);
+    }
+}

@@ -56,3 +56,68 @@ tree.drop_target();      // Option<&Path> — hovered valid folder
 See [`examples/drag_drop.rs`](../../examples/drag_drop.rs) for a
 complete working app with `fs::rename` on drop, post-move
 refresh, and a live drag-preview status bar.
+
+---
+
+## `ItemTree<T>` — reorder and nest (v0.9.0)
+
+`ItemTree<T>` supports drag-and-drop reorder/nest via the same
+deferred-selection, Escape-cancel model as `DirectoryTree`, with
+one key difference: the drop is described as a **position relative
+to a target node** rather than "drop into a folder."
+
+### Enabling
+
+Drag-and-drop is **off by default** on `ItemTree`. Enable it with
+the builder:
+
+```rust,ignore
+let tree: ItemTree<MyNode> = ItemTree::new().with_drag_and_drop(true);
+```
+
+### Handling `DragCompleted`
+
+When the user drops, the widget emits
+`ItemTreeEvent::DragCompleted { sources, target, position }`.
+The `position` is a `DropPosition`:
+
+| `DropPosition` | Effect on the model                              |
+| -------------- | ------------------------------------------------ |
+| `Before`       | Insert sources as siblings just before `target`  |
+| `Into`         | Append sources as the last children of `target`  |
+| `After`        | Insert sources as siblings just after `target`   |
+
+The widget mutates nothing — your app applies the move, rebuilds
+its `ItemNode<T>` tree, and calls `set_tree`. Key-based diffing
+(RFC 001 §[D4]) then preserves expansion and selection for all
+surviving ids — *including the moved nodes*, since identity is
+orthogonal to position.
+
+```rust,ignore
+match msg {
+    Message::Tree(ev) => {
+        if let ItemTreeEvent::DragCompleted { sources, target, position } = &ev {
+            apply_move(&mut self.model, sources.clone(), *target, *position);
+            self.tree.set_tree_and_recompute_search(self.model.rebuild());
+        }
+        self.tree.update(ev).map(Message::Tree)
+    }
+    // ...
+}
+```
+
+> **Important:** forward the widget's `Task` with `.map(Message::Tree)`.
+> The deferred `Selected` (a click) and `DragCompleted` (a drop)
+> are delivered as `Task::done` results — if you discard the Task
+> (as the v0.8 example did), those events are never processed.
+
+### Read-only drag accessors
+
+```rust,ignore
+tree.is_dragging();         // bool
+tree.drag_sources();        // &[NodeId]
+tree.drop_target();         // Option<(NodeId, DropPosition)>
+```
+
+See [`examples/item_tree.rs`](../../examples/item_tree.rs) for a
+complete worked example that performs reorder/nest on drop.

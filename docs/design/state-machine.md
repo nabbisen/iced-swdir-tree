@@ -299,3 +299,166 @@ combination is valid:
 | Drag in progress while filter changes | `set_filter` rebuilds nodes but does not clear drag state. The drag continues over the new filtered view. |
 | Collapse while search active | The view respects `visible_paths` for rendering (bypassing `is_expanded`), so a collapsed folder whose descendants match still shows in search mode. |
 | Multi-select while search active | `ExtendRange` uses `visible_rows()` which is search-aware; the range covers only visible rows. |
+
+---
+
+## ItemTree state machine
+
+`ItemTree<T>` is a synchronous, in-memory tree with no scan
+lifecycle. It shares the Selection, Search, and Drag dimensions
+with `DirectoryTree` but drops the Loading dimension entirely.
+
+### State dimensions
+
+| Dimension | Values |
+| --- | --- |
+| Selection | Empty, or a non-empty ordered set of `NodeId`s |
+| Search | Inactive (`None`), or Active with a query string |
+| Drag | Idle, or Active (drag in progress, optional valid hover) |
+
+There is no Loading dimension: every node is always fully loaded.
+`update()` / `on_*` methods always return `Task::none()` /
+`ScanRequest::None`.
+
+---
+
+### `set_tree(root: ItemNode<T>)`
+
+Full replacement with key-based diffing.
+
+1. Snapshot the current tree: build `old_state: HashMap<NodeId,
+   (is_expanded, is_selected)>` by walking the existing tree.
+2. Build the new `ItemNodeState<T>` tree from `root`, transferring
+   `(is_expanded, is_selected)` for any `NodeId` that appears in
+   `old_state`; new ids start `(false, false)`.
+3. Prune `selected_ids`, `active_id`, and `anchor_id`: drop any
+   id that no longer exists in the new tree.
+4. Call `sync_selection_flags()`.
+5. If search is active and `T: Display`, call
+   `recompute_search_visibility()`.
+
+Side effects: none.
+
+---
+
+### `Toggled(id: NodeId)`
+
+- If `id` is not found: no-op.
+- If `id` has no children: no-op (leaves have no caret).
+- Otherwise: flip `node.is_expanded`.
+
+Side effects: none.
+
+---
+
+### `Selected(id: NodeId, mode: SelectionMode)`
+
+Identical contract to `DirectoryTree::Selected`, with `NodeId`
+substituted for `PathBuf`.
+
+- Set `active_id = Some(id)`.
+- Apply `mode` to `selected_ids`.
+- `ExtendRange` uses `visible_rows()` over `NodeId`s.
+- Call `sync_selection_flags()`.
+
+Side effects: none.
+
+---
+
+### `set_search_query(query)` / `clear_search()`
+
+Identical contract to `DirectoryTree`, matching against
+`format!("{}", node.data).to_lowercase()` (full-string,
+not basename-only). Requires `T: Display`.
+
+Side effects: none.
+
+---
+
+### ItemTree drag transitions (v0.9.0)
+
+Drag-and-drop is **opt-in** (`with_drag_and_drop(true)`, default
+off). When disabled, all `Drag(*)` messages are no-ops and the
+view emits `Selected(_, Replace)` directly on press.
+
+#### `Drag::Pressed(id: NodeId)`
+
+- If drag-and-drop is disabled: no-op.
+- If `id ∈ selected_ids`: `sources = selected_ids` (in tree
+  pre-order). Else: `sources = [id]`.
+- Snapshot parent map: `parent: HashMap<NodeId, Option<NodeId>>`
+  — one O(n) walk of the current tree; every live node is a key.
+- `drag = Some(ItemDragState { sources, primary: id, parent,
+  hover: None })`.
+
+Side effects: none.
+
+#### `Drag::Entered(target: NodeId, position: DropPosition)`
+
+A row's drop zone received the cursor during an active drag.
+
+- If no drag active: no-op.
+- Evaluate validity of `(target, position)` against the snapshot:
+  1. `target` must be a key in `parent` (live node).
+  2. `target ∉ sources`.
+  3. For `Before`/`After`: `parent[target]` must be `Some(_)` —
+     root has no sibling slot.
+  4. No cycle: the *effective new parent* (`target` for `Into`,
+     else `parent[target]`) must not equal any `s ∈ sources` and
+     must not lie on the descendant side of any source (i.e., no
+     source appears on its ancestor chain).
+- If valid: `drag.hover = Some((target, position))`.
+- Else: `drag.hover = None`.
+
+Side effects: none.
+
+#### `Drag::Exited(target: NodeId, position: DropPosition)`
+
+- If `drag.hover == Some((target, position))`, clear it.
+- A stale or mismatched Exited is a no-op.
+
+Side effects: none.
+
+#### `Drag::Released(target: NodeId, position: DropPosition)`
+
+- If no drag active: no-op.
+- Take and clear `drag`.
+- If `target == drag.primary` (click, not drag):
+  - **Side effect:** emit `Selected(primary, Replace)` (deferred
+    selection — press did not mutate selection).
+- Else if `drag.hover == Some((t, p))` (valid drop):
+  - **Side effect:** emit `DragCompleted { sources, target: t,
+    position: p }`.
+- Else: quietly return to idle (cancelled drag; selection
+  deliberately unchanged).
+
+#### `Drag::Cancelled`
+
+- Clear `drag` unconditionally.
+- No-op if no drag was active.
+
+Side effects: none.
+
+---
+
+### `handle_key` for ItemTree
+
+Identical bindings to `DirectoryTree` with `NodeId` substituted
+for `PathBuf`, plus one ItemTree-specific binding:
+
+| Key | Condition | Event produced |
+| --- | --- | --- |
+| `Escape` | Drag active | `Drag(Cancelled)` |
+| `Escape` | Drag idle | *None* (unbound; app keeps Escape) |
+| All other keys | — | Same as `DirectoryTree::handle_key` |
+
+---
+
+### ItemTree composability rules
+
+| Situation | Behaviour |
+| --- | --- |
+| Drag active while search is active | Visible rows are search-filtered; validity check still uses the full snapshotted parent map (not just visible nodes). |
+| `set_tree` called while drag is active | Drag state is cleared (the parent-map snapshot is now stale). |
+| `with_drag_and_drop(false)` called while drag is active | Drag state is cleared immediately. |
+| `set_search_query` called while drag is active | Drag continues; search re-filters the visible rows. |

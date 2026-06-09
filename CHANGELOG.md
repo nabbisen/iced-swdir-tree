@@ -5,6 +5,83 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] — 2026-06-09
+
+Implements **RFC 002 — Drag-and-drop for `ItemTree<T>`**. Resolves
+the deferral in RFC 001 [D10] ("descendant-validity check requires
+explicit tree traversal") and the open `Escape`-during-drag note in
+RFC 001 [D7] for `ItemTree`. Drag-and-drop is opt-in and off by
+default; existing `ItemTree` applications are unaffected.
+
+### Added
+
+- **`DropPosition`** — `Before` / `Into` / `After`, describing where
+  a dragged node lands relative to the drop target. Each maps to an
+  unambiguous `(new_parent, insertion_point)` without depending on
+  cursor geometry.
+- **`ItemDragMsg`** — opaque drag-machinery event enum for `ItemTree`,
+  mirroring `DragMsg` for `DirectoryTree`. Applications route these
+  back through `update` unchanged.
+- **`ItemTreeEvent::Drag(ItemDragMsg)`** — internal drag instrumentation
+  event, analogous to `DirectoryTreeEvent::Drag`.
+- **`ItemTreeEvent::DragCompleted { sources, target, position }`** —
+  emitted when the user drops on a valid target. `sources` is a
+  non-empty `Vec<NodeId>` in tree order; `target` is live; the
+  `(target, position)` pair satisfied the validity rules.
+- **`ItemTree::with_drag_and_drop(bool)`** — opt-in builder (default
+  off). When off, view behaviour is byte-identical to v0.8.
+- **`ItemTree::is_dragging()`**, **`drag_sources()`**,
+  **`drop_target()`** — read-only drag-state accessors.
+- **Drop-zone view**: when enabled, each row gets a thin `Before`
+  strip, the row body (the `Into` zone), and a thin `After` strip.
+  A primary-palette insertion bar lights up on the active strip;
+  the `Into` zone shows the same success-palette drop highlight as
+  `DirectoryTree`.
+- **`Escape` cancels** an in-flight `ItemTree` drag (only while a
+  drag is active, so applications keep `Escape` otherwise). Closes
+  the RFC 001 [D7] open item.
+- **Validity via parent-map snapshot**: when a drag begins, the widget
+  takes an O(n) `HashMap<NodeId, Option<NodeId>>` snapshot. Hover
+  validity checks are then O(depth) chain walks — the `NodeId`
+  analogue of `DirectoryTree`'s free O(1) `PathBuf::starts_with`.
+- **15 new integration tests** in `tests/item_tree_drag_drop.rs`
+  covering: idle state, disabled-DnD noop, press, hover/exit, invalid
+  target, Escape-cancel, Escape-idle-unbound, release-clears-state,
+  same-node click, multi-source tree order, unselected-node drag,
+  cancelled event, and stray-entered noop.
+- **12 new unit tests** in `src/item_tree/drag/tests.rs` covering the
+  validity rules: self-drop, descendant cycle, deep cycle, sibling
+  reorder, nest into unrelated node, root-sibling rejection,
+  nest-into-root, drop-into-current-parent, nonexistent target,
+  multi-source valid, multi-source cycle, target-in-sources.
+- **RFC 002** filed at `rfcs/done/002-item-tree-drag-and-drop.md`.
+- **`examples/item_tree.rs`** updated: enables `with_drag_and_drop`,
+  handles `DragCompleted` with a full `apply_move` that extracts
+  sources, inserts at the requested position, and calls
+  `set_tree_and_recompute_search`. Propagates the widget's `Task`
+  correctly (v0.8 dropped it — fine for v0.8's event set, but
+  necessary for the deferred-selection click and drop events).
+
+### Changed
+
+- **`swdir` dependency bumped `0.10` → `0.11`** (resolves to 0.11.3),
+  aligning with `dioxus-swdir-tree-core`. No source changes were
+  required; the only public touchpoint is `From<&swdir::ScanError>
+  for Error`, so downstreams that construct the crate's `Error` from
+  a `swdir::ScanError` will need `swdir 0.11` as well.
+- **`docs/design/feature-specs.md`** S11.9 updated from "out of scope
+  for v0.8" to the shipped drag spec (S11.9 – S11.16).
+- **`docs/guide/drag-and-drop.md`** gains a complete `ItemTree`
+  drag-and-drop section.
+- **`ROADMAP.md`** slots v0.9.0 before the v1.0 API-freeze (v1.0 will
+  now freeze the surface that includes `ItemTree` drag-and-drop).
+
+### No breaking changes to `DirectoryTree`
+
+All existing `DirectoryTree` behaviour is unchanged.
+
+---
+
 ## [0.8.0] — 2026-06-09
 
 Implements **RFC 001 — Generic item tree**. Adds `ItemTree<T>`,

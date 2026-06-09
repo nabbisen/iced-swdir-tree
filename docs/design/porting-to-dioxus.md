@@ -313,55 +313,27 @@ captured even when the mouse leaves the tree.
 
 ---
 
-## Dependency considerations
+## Cross-framework architecture decision (v0.9.0)
 
-### Does `dioxus-swdir-tree` need to depend on iced?
+> **Note:** This document previously recommended extracting a shared
+> `swdir-tree-core` crate. That recommendation was withdrawn (RFC 003,
+> archived). See `HANDOFF.md` for the full rationale.
 
-No. The core state machine has no iced dependency. Extract the
-state types into a `swdir-tree-core` crate:
+The resolved position is: **share the design, not the code.**
+Each framework implements the shared spec idiomatically, using the
+data structures and async model that fit its architecture.
 
-```
-swdir-tree-core
-├── DirectoryTree (state only, no view)
-├── TreeNode, TreeConfig, TreeCache
-├── DirectoryTreeEvent, LoadPayload
-├── SelectionMode, DragMsg, DragState
-├── SearchState
-├── IconTheme, IconRole, IconSpec, UnicodeTheme
-├── ScanExecutor (trait only)
-└── scan_dir wrapper
+The shared assets are the documents in `docs/design/` — especially
+`feature-specs.md` (the S-clause oracle each side's tests validate
+against) and `state-machine.md` (the precise transition spec). The
+Dioxus core (`dioxus-swdir-tree-core`) was built "following the
+design documents of `iced-swdir-tree` v0.7" and demonstrated that
+faithful parity is achievable from the docs alone, without a shared
+dependency.
 
-iced-swdir-tree
-└── depends on swdir-tree-core
-└── view: tree.view(mapper) -> iced::Element
-
-dioxus-swdir-tree
-└── depends on swdir-tree-core
-└── component: DirectoryTreeView { tree, on_event }
-```
-
-This approach:
-- Prevents iced being a transitive dependency of dioxus apps.
-- Lets both `iced-swdir-tree` and `dioxus-swdir-tree` share
-  the same state machine, tests, and correctness properties.
-- Reuses all existing tests in `swdir-tree-core` — a Dioxus
-  port doesn't need to re-verify state transitions.
-
-### What must `swdir-tree-core` NOT contain?
-
-- No `iced::Font`, `iced::Element`, `iced::Task`, `iced::Color`.
-- `IconSpec.font` should use `Option<CssFontSpec>` (a string)
-  or a generic `F: IconFont` bound, not `iced::Font`.
-- `ScanFuture` can use `Pin<Box<dyn Future<Output = Result<…>>>>`.
-
-### What `iced` types appear in the current implementation?
-
-| Type | Location | Notes |
-| --- | --- | --- |
-| `iced::Font` | `IconSpec.font` | Must be replaced in core |
-| `iced::Element` | `icon::render` return type | View only; not in core |
-| `iced::Task` | `update()` return type | View/binding layer only |
-| `iced::widget::*` | `view.rs` | View only |
+`dioxus-swdir-tree-core`'s internal core/view split is the right
+call for the Dioxus architecture. It is not a template `iced-swdir-tree`
+must copy; each project stays self-contained and follows the shared spec.
 
 ---
 
@@ -369,23 +341,23 @@ This approach:
 
 The specification in [feature-specs.md](feature-specs.md) is
 the oracle. The test patterns in `iced-swdir-tree` are
-framework-agnostic and can be reused directly:
+behavioural, not iced-specific, and can be ported directly:
 
 ```
 tests/
-├── prefetch.rs       ← can be copied unchanged to swdir-tree-core
-├── search.rs         ← can be copied unchanged
-├── icon_theme.rs     ← can be copied unchanged
-├── tree_multi_select.rs  ← can be copied unchanged
-├── tree_drag_drop.rs     ← can be copied unchanged
+├── prefetch.rs            ← port to dioxus-swdir-tree-core tests
+├── search.rs              ← port to dioxus-swdir-tree-core tests
+├── icon_theme.rs          ← port to dioxus-swdir-tree-core tests
+├── tree_multi_select.rs   ← port to dioxus-swdir-tree-core tests
+├── tree_drag_drop.rs      ← port to dioxus-swdir-tree-core tests
+├── item_tree_drag_drop.rs ← NEW (v0.9.0); port for ItemTree DnD
 └── …
 ```
 
-The `__test_expand_blocking` helper (synchronously scans a
-path and merges the result) is the key: it lets tests bypass
-the async scanning infrastructure entirely. If `swdir-tree-core`
-exposes the same helper, all existing tests port with minimal
-changes.
+The `__test_expand_blocking` / `scan_and_feed` helper is the key
+for `DirectoryTree` tests. For `ItemTree` tests no such helper is
+needed — `ItemTree` is synchronous and its tests drive the state
+machine directly.
 
 For Dioxus-specific tests (render output, event dispatch),
 `dioxus::prelude::VirtualDom` can be used in tests without a
@@ -395,28 +367,47 @@ real browser.
 
 ## Migration checklist
 
-For a Dioxus port developer working through the feature list:
+For a Dioxus port developer working through the feature list.
+Items marked ✅ are already complete in `dioxus-swdir-tree` v0.8.0.
 
-- [ ] **Core state machine** — `DirectoryTree`, `TreeNode`,
-  `on_toggled`, `on_loaded`, generation counter, `set_filter`,
-  `sync_selection_flags`. No async, no render.
-- [ ] **`__test_expand_blocking` helper** — needed for tests.
-- [ ] **Selection** — `SelectionMode`, `Selected` handler,
-  `visible_rows()`.
-- [ ] **Async scanning** — `ScanExecutor`, `ScanJob`,
-  coroutine wiring.
-- [ ] **Dioxus component** — `DirectoryTreeView`, row rendering,
-  caret / icons.
-- [ ] **Keyboard** — `onkeydown` handler, `handle_key` logic.
-- [ ] **Multi-select** — Shift/Ctrl modifier tracking (must be
-  in component state, not tree state).
-- [ ] **Drag-and-drop** — synthetic mouse-event drag, target
-  validity, `DragCompleted` emission.
-- [ ] **Prefetch** — `with_prefetch_limit`, skip list, cascade
-  prevention. Tests are already written in `tests/prefetch.rs`.
-- [ ] **Incremental search** — `set_search_query`,
-  `recompute_search_visibility`, `visible_rows()` dispatch.
-  Tests are already written in `tests/search.rs`.
-- [ ] **Icon themes** — `IconTheme` trait, `UnicodeTheme`,
-  optional `LucideTheme`. Replace `iced::Font` with a
-  CSS-compatible alternative.
+**DirectoryTree**
+
+- ✅ Core state machine — `DirectoryTree`, `TreeNode`, `on_toggled`,
+  `on_loaded`, generation counter, `set_filter`,
+  `sync_selection_flags`.
+- ✅ `expand_blocking` helper — for tests.
+- ✅ Selection — `SelectionMode`, `on_selected`, `visible_rows()`.
+- ✅ Async scanning — `ScanExecutor`, coroutine/`ScanRequest` wiring.
+- ✅ Dioxus component — `DirectoryTreeView`, row rendering, caret/icons.
+- ✅ Keyboard — `onkeydown` handler, `handle_key` logic.
+- ✅ Multi-select — Shift/Ctrl modifier tracking.
+- ✅ Drag-and-drop — synthetic mouse-event drag, target validity,
+  `DragCompleted` emission.
+- ✅ Prefetch — `with_prefetch_limit`, skip list, cascade prevention.
+- ✅ Incremental search — `set_search_query`, `visible_rows()`.
+- ✅ Icon themes — `IconTheme`, `UnicodeTheme`, optional `LucideTheme`.
+
+**ItemTree**
+
+- ✅ Core state machine — `ItemTree<T>`, `NodeId`, `ItemNode`,
+  `set_tree` with key-based diffing, `on_toggled`, `on_selected`.
+- ✅ Selection and keyboard — same contract as `DirectoryTree`.
+- ✅ Incremental search — matches against display string, `T: Display`.
+- ✅ Dioxus component — `ItemTreeView`, `item_view.rs`, `item_row.rs`.
+- [ ] **ItemTree drag-and-drop** ← **not yet implemented; primary
+  handoff item from iced-swdir-tree v0.9.0.** See `HANDOFF.md` for
+  the full spec and `docs/design/feature-specs.md` S11.9–S11.16 for
+  the oracle. Summary:
+  - `DropPosition { Before, Into, After }` — before/into/after a target.
+  - `with_drag_and_drop(bool)` opt-in (default off).
+  - Validity: effective-new-parent must not be a source or descendant
+    of a source. Use the arena's existing parent links — no snapshot
+    needed (simpler than iced's workaround).
+  - Events: `ItemTreeEvent::Drag(ItemDragMsg)` +
+    `DragCompleted { sources, target, position }`.
+  - Deferred selection: press does not mutate; same-node release
+    emits `Selected(Replace)`.
+  - `Escape` cancels (only while drag active).
+  - View: three zones per row — thin `Before` strip, row body (`Into`),
+    thin `After` strip — each a separate `onmouseenter/leave/up` target.
+

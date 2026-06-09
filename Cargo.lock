@@ -1208,7 +1208,7 @@ dependencies = [
 
 [[package]]
 name = "iced-swdir-tree"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "iced",
  "lucide-icons",
@@ -2842,9 +2842,9 @@ dependencies = [
 
 [[package]]
 name = "swdir"
-version = "0.10.0"
+version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af31364636cb58c40f2f8472bd90fb77c73facb2febc80817f167c6fe3449fc3"
+checksum = "5a33f2af81a7478933a319e0adfb37a65faf1cbe917b7555d8753f527af280af"
 dependencies = [
  "rayon",
  "thiserror 2.0.18",

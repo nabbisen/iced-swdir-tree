@@ -102,6 +102,7 @@ pub use crate::directory_tree::{
 
 pub use crate::item_tree::{
     ItemTree, ItemTreeEvent,
+    drag::{DropPosition, ItemDragMsg},
     node::{ItemNode, NodeId},
 };
 

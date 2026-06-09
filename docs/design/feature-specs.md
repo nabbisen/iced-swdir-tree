@@ -513,6 +513,41 @@ to `DirectoryTree` with `NodeId` substituted for `PathBuf`.**
 Same algorithm as `DirectoryTree` S6.2, over the
 `ItemTree::visible_rows()` list.
 
-**S11.9 Drag-and-drop: out of scope for v0.8.**
-Deferred because descendant-validity check requires explicit
-tree traversal, and the interaction design needs more input.
+**S11.9 Drag-and-drop: opt-in via `with_drag_and_drop(true)`.**
+Off by default. When disabled, v0.8 behaviour is preserved
+byte-identical: a press emits `Selected(_, Replace)` directly.
+
+**S11.10 Drag is activated by mouse-press on a row body.**
+`ItemDragMsg::Pressed(id)` starts a drag. Sources are the full
+`selected_ids` set (in tree order) if `id` is selected, otherwise
+`[id]` alone.
+
+**S11.11 Dropping on the same node as the press is a click.**
+`ItemDragMsg::Released(id, _)` with `id == pressed_id` cancels
+the drag and emits a deferred `Selected(id, Replace)`. Selection
+is never mutated directly on press.
+
+**S11.12 A valid drop target is determined by four rules.**
+A drop of sources `S` at `(target, position)` is valid iff:
+(1) `target` is a live node;
+(2) `target ∉ S`;
+(3) for `Before`/`After`, `target` is not the root (no sibling slot);
+(4) the effective new parent (`target` for `Into`, else `target`'s parent)
+is not any `s ∈ S` nor a descendant of any `s`.
+
+**S11.13 `Escape` cancels the drag.**
+Only bound while a drag is active; returns `None` otherwise.
+
+**S11.14 The application performs all model mutations.**
+On `DragCompleted { sources, target, position }`, the application
+moves the nodes in its own data model, rebuilds the `ItemNode<T>`
+tree, and calls `set_tree`. The widget never reorders its own
+internal tree directly.
+
+**S11.15 `DropPosition` semantics.**
+`Before` — insert sources as siblings immediately before `target`.
+`Into` — append sources as the last children of `target`.
+`After` — insert sources as siblings immediately after `target`.
+
+**S11.16 Drag state is preserved through `set_search_query`.**
+An active drag continues over the filtered view.
