@@ -58,6 +58,23 @@ Understanding or contributing.
 - [Development](internals/development.md) — running the test
   matrix locally and extending it.
 
+## Design documents (framework-agnostic)
+
+Specification-level documents for implementors porting the
+widget to other UI frameworks (e.g. `dioxus-swdir-tree`).
+
+- [Design index](design/) — overview of the five documents.
+- [Core design](design/core-design.md) — principles, invariants,
+  responsibility split.
+- [Data model](design/data-model.md) — every state field and
+  its guarantees.
+- [State machine](design/state-machine.md) — every transition,
+  the generation-counter protocol.
+- [Feature specifications](design/feature-specs.md) — numbered
+  behavioural clauses for all ten features.
+- [Porting to Dioxus](design/porting-to-dioxus.md) — concrete
+  iced → Dioxus translation with a `swdir-tree-core` proposal.
+
 ## Release notes
 
 - [CHANGELOG](../CHANGELOG.md) — per-release notes with

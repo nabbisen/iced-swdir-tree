@@ -1,6 +1,6 @@
 [package]
 name = "iced-swdir-tree"
-version = "0.7.2"
+version = "0.8.0"
 edition = "2024"
 description = "iced widget for file tree powered by swdir, supporting selection, lazy loading and filtering."
 authors = ["nabbisen"]
@@ -55,6 +55,10 @@ path = "examples/search.rs"
 [[example]]
 name = "icon_theme"
 path = "examples/icon_theme.rs"
+
+[[example]]
+name = "item_tree"
+path = "examples/item_tree.rs"
 
 [package.metadata.docs.rs]
 all-features = true

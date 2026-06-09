@@ -5,9 +5,152 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] — 2026-06-09
+
+Implements **RFC 001 — Generic item tree**. Adds `ItemTree<T>`,
+a sibling to `DirectoryTree` that provides the same keyboard
+navigation, multi-select, expand/collapse, and search surface
+for caller-supplied, in-memory node data. No async I/O, no
+generation counter, no filesystem dependency.
+
+### Added
+
+- **`NodeId(u64)`** — an opaque caller-assigned node identity.
+- **`ItemNode<T>`** — the caller-facing input struct: `{ id,
+  data: T, children: Vec<ItemNode<T>> }`.
+- **`ItemTree<T>`** — the widget, parametrised over node data
+  type `T: Clone + Debug + Send + Sync + 'static`.
+  - `ItemTree::new()` — constructs an empty tree.
+  - `set_tree(root: ItemNode<T>)` — populate or replace the
+    tree with key-based diffing.
+  - `set_tree_and_recompute_search(root)` *(requires `T:
+    Display`)* — same as `set_tree` plus re-runs any active
+    search query.
+  - All selection methods: `selected_ids()`,
+    `is_selected(NodeId)`, `active_id()`, `anchor_id()`.
+  - `update(ItemTreeEvent) -> Task<ItemTreeEvent>` — always
+    returns `Task::none()`.
+  - `handle_key(&Key, Modifiers) -> Option<ItemTreeEvent>` —
+    identical bindings to `DirectoryTree`.
+  - `set_search_query(q)` *(requires `T: Display`)*,
+    `clear_search()`, `is_searching()`,
+    `search_query()`, `search_match_count()` — same
+    semantics as `DirectoryTree`.
+  - `view(mapper) -> Element` *(requires `T: Display`)*.
+  - `with_icon_theme(Arc<dyn IconTheme>)` — same interface.
+- **`ItemTreeEvent`** — `Toggled(NodeId)` and `Selected(NodeId,
+  SelectionMode)`. No `Loaded` variant.
+- **`examples/item_tree.rs`** — a section-outline demo using
+  `ItemTree<Section>` with re-parse, search, and multi-select.
+- **21 new unit tests** in `src/item_tree/tests.rs` covering
+  construction, expand/collapse, selection (all three modes),
+  key-based diffing (expansion preserved / selection
+  preserved / disappeared ids dropped / position-change
+  preserves state), search (filter + ancestors, case-
+  insensitive, empty clears, selection survives), keyboard
+  navigation, icon theme, and object-safety.
+- **RFC 001** filed at `rfcs/proposed/001-generic-item-tree.md`
+  with the `rfcs/README.md` index.
+
+### Key-based diffing contract
+
+`set_tree` diffs the new `ItemNode<T>` tree against the
+current internal tree using `NodeId` as the key:
+
+- **Surviving keys**: expansion and selection state are
+  preserved regardless of position change.
+- **New keys**: start collapsed and unselected.
+- **Disappeared keys**: silently removed from `selected_ids`,
+  `active_id`, and `anchor_id`.
+
+This is the design the `layered` (Dioxus Markdown editor)
+author requested: re-parsing the document on every keystroke
+rebuilds the tree, but the user's open sections and selections
+persist across edits.
+
+### What `ItemTree<T>` does NOT have
+
+Compared to `DirectoryTree`, the following are absent by design:
+
+- No async I/O (`Task::none()` always).
+- No `ScanExecutor`, no generation counter.
+- No `DirectoryFilter` (per-node filtering can be expressed by
+  omitting nodes from the input tree).
+- No drag-and-drop (deferred to v0.8.x — descendant validity
+  requires explicit tree traversal rather than path-prefix
+  comparison).
+
+### Test counts
+
+- **174 total** (was 154): 109 unit + 65 integration + 0
+  doctest. Added 21 unit tests for `ItemTree`.
+
 ## [0.7.2] — 2026-06-07
 
-**External design docs** added. Dependencies updated.
+**Design documents for `dioxus-swdir-tree` and future ports.
+No code changes, no test changes.**
+
+### Added — `docs/design/`
+
+A new `docs/design/` subdirectory ships five framework-agnostic
+specification documents written to support development of
+`dioxus-swdir-tree` (and any other widget port targeting a
+different UI framework). Together they cover:
+
+- **[`core-design.md`](docs/design/core-design.md)** — the ten
+  defining properties of the widget: what it is, what it is
+  not, the non-blocking I/O model, the generation-tag
+  protocol, why selection is by-path rather than by-node, the
+  hard line between widget-owned UI state and app-owned data
+  state, orthogonality of the four state dimensions, and the
+  scan lifecycle end-to-end.
+
+- **[`data-model.md`](docs/design/data-model.md)** — every
+  field of `DirectoryTree` with its type shape, invariants,
+  and derivation rules. Covers `TreeNode` (five named
+  invariants), `TreeCache` and why it stores unfiltered
+  entries, the generation counter (what bumps it and what
+  does not), the three selection fields and their exact
+  semantics, `DragState`, `prefetching_paths`,
+  `SearchState`, and `icon_theme`.
+
+- **[`state-machine.md`](docs/design/state-machine.md)** —
+  precise transition specification for every event, written
+  as pseudocode condition-action pairs: `Toggled` (four
+  cases), `Loaded` (seven steps), `Selected` (all three
+  `SelectionMode` values), all five `Drag::*` variants,
+  `set_filter`, `set_search_query`, `clear_search`. Includes
+  the `visible_rows()` algorithm and a composability table
+  for all cross-dimension state combinations.
+
+- **[`feature-specs.md`](docs/design/feature-specs.md)** —
+  numbered `S<n>.<m>` behavioural clauses for all ten
+  features, written as a test oracle. Covers lazy loading,
+  display filters, single-select, keyboard navigation,
+  pluggable executor, multi-select, drag-and-drop, parallel
+  pre-expansion, incremental search, and icon themes.
+  Notable: the error-node retry rule (S1.6), the
+  `FoldersOnly` hides hidden-directories rule (S2.2), and
+  the press-release-same-row = click rule (S7.2).
+
+- **[`porting-to-dioxus.md`](docs/design/porting-to-dioxus.md)** —
+  concrete iced → Dioxus translation with code sketches:
+  async scanning via `use_coroutine`, prefetch fan-out,
+  keyboard via `onkeydown`, drag-and-drop synthesised from
+  mouse events (and why HTML5 drag-and-drop is unsuitable),
+  and a `swdir-tree-core` extraction proposal that would let
+  both `iced-swdir-tree` and `dioxus-swdir-tree` share the
+  state machine and tests without iced being a transitive
+  dependency of Dioxus apps. Ends with an 11-step migration
+  checklist.
+
+### Not changed
+
+- **Public API byte-identical to 0.7.0.** No new types,
+  no renamed methods, no behaviour changes.
+- **Tests unchanged.** Still 154 tests, still all green.
+- The `docs/design/README.md` index was also added as the
+  entry point to the new subdirectory.
 
 ## [0.7.1] — 2026-04-30
 

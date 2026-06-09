@@ -464,3 +464,55 @@ fn glyph(&self, role: IconRole) -> IconSpec
 ```
 The method should be cheap and pure — build the mapping at
 construction time if needed.
+
+---
+
+## Feature 11 — Generic item tree (`ItemTree<T>`)
+
+**What it does.** Provides the same keyboard navigation,
+multi-select, expand/collapse, and search as `DirectoryTree`,
+for caller-supplied in-memory node data. No async I/O.
+
+### Specification
+
+**S11.1 Node identity is `NodeId(u64)` — opaque, caller-assigned,
+unique within the tree.**
+The widget uses it only for equality checks. Duplicate IDs
+produce unspecified diffing behaviour.
+
+**S11.2 `ItemNode<T>` is the caller-facing input type.**
+`{ id: NodeId, data: T, children: Vec<ItemNode<T>> }`.
+A node with `children.is_empty()` is a leaf (no caret rendered).
+
+**S11.3 All nodes are always "loaded".**
+There is no `is_loaded` flag and no async scan lifecycle.
+`update()` always returns `Task::none()`.
+
+**S11.4 `set_tree` replaces the tree with key-based diffing.**
+For each NodeId in the new tree:
+- If it existed in the old tree: copy `is_expanded` and
+  `is_selected` state.
+- If it is new: start collapsed and unselected.
+For each NodeId that disappears: silently remove from
+`selected_ids`, `active_id`, and `anchor_id`.
+
+**S11.5 Position changes preserve state.**
+A NodeId that moves from one parent to another in the new tree
+retains its expansion and selection state.
+
+**S11.6 Search matches against `format!("{}", node.data)`.**
+Full-string lowercase substring match (not basename-only as in
+`DirectoryTree`). Requires `T: Display`. All other search
+semantics (visible = matches ∪ ancestors, sees through collapse,
+selection orthogonal) are identical to S9.
+
+**S11.7 Keyboard, multi-select, icon themes: identical spec
+to `DirectoryTree` with `NodeId` substituted for `PathBuf`.**
+
+**S11.8 `SelectionMode::ExtendRange` uses `visible_rows()`.**
+Same algorithm as `DirectoryTree` S6.2, over the
+`ItemTree::visible_rows()` list.
+
+**S11.9 Drag-and-drop: out of scope for v0.8.**
+Deferred because descendant-validity check requires explicit
+tree traversal, and the interaction design needs more input.

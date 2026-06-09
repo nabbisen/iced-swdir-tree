@@ -42,7 +42,8 @@ channel. The `ScanExecutor` trait is the seam that decouples
 result."
 
 In the reference implementation (iced), this is achieved via
-`iced::Task::perform`. What matters is the contract: the
+`iced::Task::perform`. A Dioxus port would use
+`spawn`/`use_coroutine`. What matters is the contract: the
 callback that merges results into widget state always runs on
 the main thread (or inside the reactive update cycle), never
 concurrently with other state mutations.

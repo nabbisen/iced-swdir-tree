@@ -128,7 +128,10 @@ I/O.
 
 The cache is never explicitly invalidated in normal use. Old
 entries are simply overwritten when a newer scan for the same
-path completes.
+path completes. If a Dioxus port wants to support "force
+refresh" (re-scan even if already loaded), it can set the
+generation counter higher and issue a new scan — the result
+will overwrite the cache entry.
 
 ---
 
@@ -318,4 +321,6 @@ consulted during state transitions — it is purely a rendering
 concern.
 
 Because it is `Arc<dyn>`, the theme can be cloned cheaply and
-shared across frames.
+shared across frames. A Dioxus port can store it separately
+from the reactive state if the rendering system decouples view
+from state.

@@ -1,6 +1,6 @@
 # Roadmap
 
-Current: **v0.7.1** · Next: **v1.0.0** (API freeze — no code changes planned).
+Current: **v0.8.0** · Next: **v1.0.0** (API freeze — no code changes planned).
 
 Seven feature milestones have shipped as minor-version releases;
 patch releases have handled internal refactors, documentation,
@@ -20,8 +20,9 @@ API surface is now complete and frozen pending the 1.0 release.
 | `0.6.1`  | ✅ shipped | Prefetch safety valve (`.git` / `node_modules` / …).       |
 | `0.7.0`  | ✅ shipped | Custom icon themes via an `IconTheme` trait.               |
 | `0.7.1`  | ✅ shipped | Dependencies updated.                                      |
-| `0.7.2`  | ✅ shipped | External design docs added. Dependencies updated.          |
-| `1.0.0`  | 🎯 next    | API freeze release. No code changes from `0.7.0`.          |
+| `0.7.2`  | ✅ shipped | Framework-agnostic design documents (`docs/design/`).      |
+| `0.8.0`  | ✅ shipped | Generic item tree — `ItemTree<T>` (RFC 001).               |
+| `1.0.0`  | 🎯 next    | API freeze release. No code changes from `0.8.x`.          |
 
 Patch releases (internal refactors, docs): `0.4.1`, `0.4.2`,
 `0.6.2`, `0.6.3`. Summaries below.
@@ -91,7 +92,12 @@ own theme can turn it off for a slimmer binary.
 
 ### v0.7.1 — Dependencies updated ✅
 
-### v0.7.2 — External design docs added. Dependencies updated ✅
+### v0.7.2 — Framework-agnostic design documents ✅
+See [CHANGELOG](CHANGELOG.md#072--2026-06-07). Five Markdown
+documents in `docs/design/` specify the widget's core design,
+data model, state machine, feature contracts, and a Dioxus
+porting guide. Written to support development of
+`dioxus-swdir-tree`. No code or test changes.
 
 ## Shipped — safety patches
 
@@ -138,65 +144,19 @@ lowercase-kebab-case; two renamed for clarity (`executor.md` →
 
 ---
 
+## Shipped — tooling and documentation
+
+### v0.8.0 — Generic item tree (`ItemTree<T>`) ✅
+See [CHANGELOG](CHANGELOG.md#080--2026-06-09). Implements
+RFC 001. Adds `ItemTree<T>` with `NodeId(u64)` identity,
+key-based diffing via `set_tree`, and the same keyboard /
+multi-select / search / icon-theme surface as `DirectoryTree`.
+No async I/O. Motivated by the `layered` Markdown editor's
+section-outline use case.
+
 ## Next: v1.0.0
 
-With v0.7 shipped, every roadmap item originally planned for
+With v0.8.0 shipped, every roadmap item originally planned for
 v1.0 has landed. The 1.0 release is an API-freeze marker, not a
-new feature release: it takes whatever is at v0.7.x (plus any
-bug fixes that accumulate) and stamps it as the stable surface.
-
-What 1.0 commits to:
-
-- **No breaking changes to existing public APIs** until 2.0.
-  New functionality is added via additional methods/types that
-  don't alter the existing surface.
-- **`IconSpec`'s field shape is frozen.** Adding fields is
-  breaking and waits for a hypothetical 2.0.
-- **`IconRole` and any other `#[non_exhaustive]` enums may grow
-  new variants** in 1.x minor releases. External `match`es
-  already need `_ =>` fallbacks for these; that contract
-  continues into 1.x.
-- **`DirectoryTree`'s builder-chain** (`with_filter`,
-  `with_max_depth`, `with_executor`, `with_prefetch_limit`,
-  `with_prefetch_skip`, `with_icon_theme`) is stable as-is.
-
----
-
-## Under consideration for 0.6.x / 0.7.x patches
-
-Candidates for landing before v1.0 if demand materializes, but
-not currently scheduled:
-
-- **Deeper prefetch cascade.** Configurable depth with a global
-  concurrency cap. v0.5 intentionally caps at one level to avoid
-  the `per_parent ^ depth` blow-up; a cascading mode with a
-  bounded task budget would serve apps on fast executors where
-  users drill deep.
-- **Pluggable search matcher trait.** The v0.6 defaults
-  (case-insensitive basename substring) cover the common case.
-  A trait seam would let apps opt into regex, glob, fuzzy, or
-  full-path modes without the crate shipping them all.
-- **Opt-in "click-to-escape-search" behaviour.** Today clicking
-  to expand a folder during search stays scoped to the filter.
-  An explicit app-provided setting to let clicks temporarily
-  widen the view would serve some browse-during-search
-  workflows.
-
----
-
-## After v1.0
-
-Post-1.0 directions that exceed what a v1.0 API freeze can
-accommodate. These would motivate a v2.0 (or ship as
-non-breaking extensions):
-
-- **View-layer virtualization.** iced's `Scrollable` is fine
-  through tens of thousands of rows; beyond that, a custom
-  low-level widget that renders only on-screen rows would pay
-  off.
-- **Per-node badge / decorator API.** A trait app developers
-  implement to add git-status dots, file-size labels,
-  last-modified timestamps, or arbitrary per-node overlays.
-- **Context-menu hooks.** `on_right_click`-style events so apps
-  can surface their own context menus without reimplementing
-  click-hitbox logic.
+new feature release: it takes whatever is at v0.8.x and stamps
+it as the stable surface.

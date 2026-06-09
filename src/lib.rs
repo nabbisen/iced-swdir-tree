@@ -86,6 +86,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod directory_tree;
+mod item_tree;
 
 pub use crate::directory_tree::{
     DirectoryTree,
@@ -97,6 +98,11 @@ pub use crate::directory_tree::{
     message::{DirectoryTreeEvent, LoadPayload},
     node::TreeNode,
     selection::SelectionMode,
+};
+
+pub use crate::item_tree::{
+    ItemTree, ItemTreeEvent,
+    node::{ItemNode, NodeId},
 };
 
 #[cfg(feature = "icons")]
