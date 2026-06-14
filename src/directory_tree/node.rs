@@ -101,13 +101,6 @@ impl TreeNode {
         }
     }
 
-    /// Count nodes in this subtree (including `self`). Exposed primarily
-    /// for tests and diagnostics.
-    #[allow(dead_code)]
-    pub(crate) fn node_count(&self) -> usize {
-        1 + self.children.iter().map(Self::node_count).sum::<usize>()
-    }
-
     /// Flat list of rows the view would render, in render order.
     ///
     /// Every ancestor-collapsed subtree is skipped. The returned
@@ -129,7 +122,6 @@ impl TreeNode {
 #[derive(Debug)]
 pub(crate) struct VisibleRow<'a> {
     pub node: &'a TreeNode,
-    #[allow(dead_code)]
     pub depth: u32,
 }
 
@@ -231,13 +223,6 @@ impl TreeCache {
     /// Retrieve the raw entries previously recorded for `dir`, if any.
     pub(crate) fn get(&self, dir: &Path) -> Option<&CacheEntry> {
         self.entries.get(dir)
-    }
-
-    /// Drop every cached entry. Used when the filter changes in a way
-    /// that could affect membership (hidden → not-hidden, etc.).
-    #[allow(dead_code)]
-    pub(crate) fn clear(&mut self) {
-        self.entries.clear();
     }
 }
 

@@ -5,6 +5,44 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.9.1] — 2026-06-14
+
+Audit-driven patch release. No new public API; no behaviour changes
+for code not exercising the fixed edge case.
+
+### Fixed
+
+- **`set_tree` now clears in-flight drag state.** If `set_tree` was
+  called while a drag was active the parent-map snapshot (built at
+  press time) became stale, causing subsequent hover-validity checks
+  to run against the old tree structure. The widget now clears
+  `self.drag` at the start of every `set_tree` call.
+  (`docs/design/state-machine.md` already specified this behaviour
+  in the composability table; the code was wrong.)
+
+### Removed
+
+- `TreeNode::node_count()` — internal helper, never called outside
+  its own definition. Deleted to reduce the dead surface.
+- `TreeCache::clear()` — same.
+
+### Internal
+
+- Removed a spurious `#[allow(dead_code)]` annotation on
+  `directory_tree::node::VisibleRow::depth`. The field is actively
+  read by `keyboard.rs` (lines 195, 202); the attribute was hiding
+  a live field behind a silenced warning.
+- Corrected the `ItemTree` module-doc comparison table: the
+  drag-and-drop row still read "Deferred to v0.8.x" after RFC 002
+  shipped in v0.9.0.
+- Added three integration tests covering previously-untested
+  composability rules and spec clause S11.16:
+  `set_tree_while_drag_active_clears_drag`,
+  `disabling_dnd_while_drag_active_clears_drag`,
+  `set_search_query_preserves_drag_state`.
+
+---
+
 ## [0.9.0] — 2026-06-09
 
 Implements **RFC 002 — Drag-and-drop for `ItemTree<T>`**. Resolves

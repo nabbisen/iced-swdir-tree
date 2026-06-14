@@ -26,7 +26,7 @@
 //! | Data loaded asynchronously via `ScanExecutor` | Data always fully present |
 //! | `Toggled` → scan → `Loaded` lifecycle | No loading step |
 //! | `generation` counter guards stale scan results | No generation counter |
-//! | Drag-and-drop | Deferred to v0.8.x |
+//! | Drag-and-drop | Opt-in (`with_drag_and_drop`), v0.9.0 (RFC 002) |
 //!
 //! Navigation, multi-select, search, and icon themes are identical.
 use std::collections::HashSet;
@@ -213,6 +213,11 @@ impl<T: Clone + std::fmt::Debug + Send + Sync + 'static> ItemTree<T> {
     /// selected ids that vanish are silently removed from the
     /// selection set.
     pub fn set_tree(&mut self, root: ItemNode<T>) {
+        // If a drag is in progress its parent-map snapshot is built
+        // from the pre-call tree; after set_tree the snapshot is stale
+        // and any validity check against it would be incorrect.
+        self.drag = None;
+
         // Snapshot current per-node state keyed by NodeId.
         let mut old_state = std::collections::HashMap::new();
         if let Some(existing) = &self.root {

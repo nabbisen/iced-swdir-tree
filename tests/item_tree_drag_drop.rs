@@ -211,3 +211,70 @@ fn stray_entered_without_press_is_a_noop() {
     assert!(!t.is_dragging());
     assert_eq!(t.drop_target(), None);
 }
+
+// -- composability: set_tree while drag active --
+
+#[test]
+fn set_tree_while_drag_active_clears_drag() {
+    // The parent-map snapshot taken at Pressed is stale the moment
+    // set_tree rebuilds the tree; continuing the drag would produce
+    // incorrect validity results. The widget must clear drag state
+    // (state-machine.md composability rule).
+    fn n(id: u64) -> ItemNode<String> {
+        ItemNode {
+            id: NodeId(id),
+            data: format!("node {id}"),
+            children: vec![],
+        }
+    }
+    let mut t = tree();
+    drag(&mut t, ItemDragMsg::Pressed(NodeId(11)));
+    assert!(t.is_dragging());
+
+    t.set_tree(ItemNode {
+        id: NodeId(0),
+        data: "root".into(),
+        children: vec![n(1), n(2)],
+    });
+    assert!(!t.is_dragging(), "set_tree must clear stale drag state");
+    assert_eq!(t.drop_target(), None);
+    assert!(t.drag_sources().is_empty());
+}
+
+// -- composability: disabling DnD while drag active --
+
+#[test]
+fn disabling_dnd_while_drag_active_clears_drag() {
+    let mut t = tree();
+    drag(&mut t, ItemDragMsg::Pressed(NodeId(11)));
+    assert!(t.is_dragging());
+    // with_drag_and_drop is a consuming builder; reassign to disable.
+    let t = t.with_drag_and_drop(false);
+    assert!(!t.is_dragging(), "disabling DnD must clear in-flight drag");
+    assert!(!t.is_drag_and_drop_enabled());
+}
+
+// -- composability: set_search_query preserves drag (S11.16) --
+
+#[test]
+fn set_search_query_preserves_drag_state() {
+    // S11.16: an active drag must survive a search query change.
+    // Search re-filters visible rows but must not touch drag state.
+    let mut t = tree();
+    drag(&mut t, ItemDragMsg::Pressed(NodeId(11)));
+    drag(
+        &mut t,
+        ItemDragMsg::Entered(NodeId(12), DropPosition::Before),
+    );
+    assert!(t.is_dragging());
+    assert_eq!(t.drop_target(), Some((NodeId(12), DropPosition::Before)));
+
+    t.set_search_query("node");
+
+    assert!(t.is_dragging(), "search must not clear drag state");
+    assert_eq!(
+        t.drop_target(),
+        Some((NodeId(12), DropPosition::Before)),
+        "hover must survive set_search_query"
+    );
+}
