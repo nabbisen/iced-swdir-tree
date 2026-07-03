@@ -21,7 +21,7 @@ that now includes drag-and-drop for both widgets.
 | `0.6.1`  | ✅ shipped | Prefetch safety valve (`.git` / `node_modules` / …).       |
 | `0.7.0`  | ✅ shipped | Custom icon themes via an `IconTheme` trait.               |
 | `0.7.1`  | ✅ shipped | Dependencies updated.                                      |
-| `0.7.2`  | ✅ shipped | Framework-agnostic design documents (`docs/design/`).      |
+| `0.7.2`  | ✅ shipped | Framework-agnostic design documents (`docs/src/internals/`).      |
 | `0.8.0`  | ✅ shipped | Generic item tree — `ItemTree<T>` (RFC 001).               |
 | `0.9.0`  | ✅ shipped | Drag-and-drop for `ItemTree<T>` (RFC 002).                 |
 | `1.0.0`  | 🎯 next    | API freeze release. No code changes from `0.9.x`.          |
@@ -96,7 +96,7 @@ own theme can turn it off for a slimmer binary.
 
 ### v0.7.2 — Framework-agnostic design documents ✅
 See [CHANGELOG](CHANGELOG.md#072--2026-06-07). Five Markdown
-documents in `docs/design/` specify the widget's core design,
+documents in `docs/src/internals/` specify the widget's core design,
 data model, state machine, feature contracts, and a Dioxus
 porting guide. Written to support development of
 `dioxus-swdir-tree`. No code or test changes.

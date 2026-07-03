@@ -1,31 +1,31 @@
 [package]
-name = "iced-swdir-tree"
-version = "0.9.1"
-edition = "2024"
+name        = "iced-swdir-tree"
+version     = "0.9.2"
+edition     = "2024"
 description = "iced widget for file tree powered by swdir, supporting selection, lazy loading and filtering."
-authors = ["nabbisen"]
-license = "Apache-2.0"
-categories = ["gui", "filesystem"]
-keywords = ["iced", "widget", "directory", "tree", "filesystem"]
-readme = "README.md"
-repository = "https://github.com/nabbisen/iced-swdir-tree"
+authors     = ["nabbisen"]
+license     = "Apache-2.0"
+categories  = ["gui", "filesystem"]
+keywords    = ["iced", "widget", "directory", "tree", "filesystem"]
+readme      = "README.md"
+repository  = "https://github.com/nabbisen/iced-swdir-tree"
 
 [features]
-default = []
+default     = []
 # Enable lucide-icons integration. Without this, icons fall back to short text labels.
-icons = ["dep:lucide-icons"]
+icons       = ["dep:lucide-icons"]
 
 [dependencies]
-iced = "0.14"
-swdir = "0.11"
-
-[dependencies.lucide-icons]
-version = "1"
-features = ["iced"]
-optional = true
+iced                        = "0.14"
+swdir                       = "0.11"
+lucide-icons                = { version = "1", features = ["iced"], optional = true }
 
 [dev-dependencies]
 # Integration tests operate on temp directories; no dev deps required.
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [[example]]
 name = "basic"
@@ -59,7 +59,3 @@ path = "examples/icon_theme.rs"
 [[example]]
 name = "item_tree"
 path = "examples/item_tree.rs"
-
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]

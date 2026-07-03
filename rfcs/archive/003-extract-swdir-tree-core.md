@@ -1,7 +1,7 @@
 # RFC 003 — Extract a framework-agnostic `swdir-tree-core`
 
 **Status.** Withdrawn — the extraction was decided against after discussion.
-The resolved position is that the shared asset is the **design** (`docs/design/`),
+The resolved position is that the shared asset is the **design** (`docs/src/internals/`),
 not a shared crate; each framework implements the spec idiomatically.
 See [HANDOFF.md](../../HANDOFF.md) for the full rationale and its implications
 for `dioxus-swdir-tree`.  
@@ -21,7 +21,7 @@ view layer on top. Supersedes the "Relationship to `DirectoryTree`"
 deferral in RFC 001 and the `[D11]` deferral in RFC 002.  
 **Touches.** New crate `swdir-tree-core`; a Cargo workspace at the
 repo root; `iced-swdir-tree`'s `src/` (view layer kept, state
-machine moved out); `Cargo.toml` (both crates); `docs/design/`;
+machine moved out); `Cargo.toml` (both crates); `docs/src/internals/`;
 `CHANGELOG.md`; `ROADMAP.md`; `rfcs/README.md`. Cross-project:
 informs `dioxus-swdir-tree` of a neutral core it can converge onto.
 
@@ -106,7 +106,7 @@ dev-dependency, matching the Dioxus core). It contains no UI types
 (`iced::Element`, `Task`, `widget::*` stay in `iced-swdir-tree`).
 
 It is anchored in this repository because `iced-swdir-tree` owns the
-originating design documents (`docs/design/`) that *both* cores
+originating design documents (`docs/src/internals/`) that *both* cores
 already follow. This gives `dioxus-swdir-tree` a neutral crate to
 adopt later, converging the family onto one core.
 

@@ -6,8 +6,8 @@ always-loaded, key-stable trees. Companion to
 `dioxus-swdir-tree` RFC 012.  
 **Touches.** `src/item_tree/`, `src/lib.rs` (re-exports),
 `rfcs/README.md`, `CHANGELOG.md`, `ROADMAP.md`,
-`docs/design/feature-specs.md` (new section),
-`docs/design/porting-to-dioxus.md` (updated checklist).
+`docs/src/internals/feature-specs.md` (new section),
+`docs/src/internals/porting-to-dioxus.md` (updated checklist).
 
 ---
 
@@ -41,7 +41,7 @@ The `dioxus-swdir-tree` author correctly declined to add a
 generic tree to their crate alone, because doing so without a
 shared spec would diverge from the cross-framework oracle.
 The right place to anchor the spec is here, in the upstream
-repository that owns `docs/design/feature-specs.md`.
+repository that owns `docs/src/internals/feature-specs.md`.
 
 The immediate driver is `layered`, but the design generalises:
 any application that has a tree of domain objects and wants
@@ -320,10 +320,10 @@ The RFC is considered implemented when:
    surviving keys and drops state for disappeared keys, verified
    by unit tests against hand-built trees.
 3. Keyboard navigation, multi-select, and search pass all
-   applicable clauses in `docs/design/feature-specs.md` with
+   applicable clauses in `docs/src/internals/feature-specs.md` with
    `NodeId` substituted for `PathBuf`.
 4. `cargo test --all-features` passes.
-5. The companion `docs/design/feature-specs.md` section for
+5. The companion `docs/src/internals/feature-specs.md` section for
    "Generic item tree" is written and committed alongside the
    implementation.
 6. `dioxus-swdir-tree` RFC 012 has been cross-referenced with

@@ -8,8 +8,8 @@ deferral in RFC 001 and the `Escape`-during-drag note in RFC 001
 **Touches.** `src/item_tree.rs`, `src/item_tree/drag.rs` (new),
 `src/item_tree/node.rs` (parent-map helper), `src/lib.rs`
 (re-exports), `examples/item_tree.rs`, `tests/item_tree_drag_drop.rs`
-(new), `docs/design/feature-specs.md` (Feature 11 drag clauses),
-`docs/guide/drag-and-drop.md`, `CHANGELOG.md`, `ROADMAP.md`,
+(new), `docs/src/internals/feature-specs.md` (Feature 11 drag clauses),
+`docs/src/guide/drag-and-drop.md`, `CHANGELOG.md`, `ROADMAP.md`,
 `rfcs/README.md`.
 
 ---
@@ -382,7 +382,7 @@ The RFC is implemented when:
 5. `examples/item_tree.rs` enables drag-and-drop and performs an
    actual reorder/nest on `DragCompleted`, then `set_tree`s the
    result, demonstrating state preservation across the move.
-6. `docs/design/feature-specs.md` Feature 11 gains numbered drag
+6. `docs/src/internals/feature-specs.md` Feature 11 gains numbered drag
    clauses (the test oracle) and S11.9 is updated from "out of
    scope" to the shipped behaviour.
 7. `cargo fmt`, `cargo clippy --all-targets --all-features

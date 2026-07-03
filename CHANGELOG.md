@@ -17,7 +17,7 @@ for code not exercising the fixed edge case.
   press time) became stale, causing subsequent hover-validity checks
   to run against the old tree structure. The widget now clears
   `self.drag` at the start of every `set_tree` call.
-  (`docs/design/state-machine.md` already specified this behaviour
+  (`docs/src/internals/state-machine.md` already specified this behaviour
   in the composability table; the code was wrong.)
 
 ### Removed
@@ -40,6 +40,23 @@ for code not exercising the fixed edge case.
   `set_tree_while_drag_active_clears_drag`,
   `disabling_dnd_while_drag_active_clears_drag`,
   `set_search_query_preserves_drag_state`.
+
+### Documentation
+
+- Restructured `docs/` into an [mdbook](https://rust-lang.github.io/mdBook/)
+  under `docs/src/`, organized by audience: **User Guide** (New Users),
+  **Reference** (Intermediate Users), and **Maintainers & Contributors**.
+  Added `docs/book.toml` and `docs/src/SUMMARY.md`.
+- New guide pages: `getting-started`, `directory-tree`, `item-tree`,
+  and `faq`; new `rfc-process` page for contributors. The former
+  framework-agnostic `docs/design/` specifications now live under
+  `docs/src/internals/` and are surfaced under Reference.
+- Rewrote `README.md` to a concise, standard structure (hero,
+  overview, when-to-use, quick start, design notes, links) covering
+  **both** widgets; refreshed the stale version pin and test count.
+- Added a `NOTICE` file (Apache-2.0, author nabbisen).
+- Removed a stray empty `iced-swdir-tree-0.8.0/` directory that had
+  been accidentally packaged.
 
 ---
 
@@ -107,9 +124,9 @@ default; existing `ItemTree` applications are unaffected.
   required; the only public touchpoint is `From<&swdir::ScanError>
   for Error`, so downstreams that construct the crate's `Error` from
   a `swdir::ScanError` will need `swdir 0.11` as well.
-- **`docs/design/feature-specs.md`** S11.9 updated from "out of scope
+- **`docs/src/internals/feature-specs.md`** S11.9 updated from "out of scope
   for v0.8" to the shipped drag spec (S11.9 – S11.16).
-- **`docs/guide/drag-and-drop.md`** gains a complete `ItemTree`
+- **`docs/src/guide/drag-and-drop.md`** gains a complete `ItemTree`
   drag-and-drop section.
 - **`ROADMAP.md`** slots v0.9.0 before the v1.0 API-freeze (v1.0 will
   now freeze the surface that includes `ItemTree` drag-and-drop).
@@ -205,14 +222,14 @@ Compared to `DirectoryTree`, the following are absent by design:
 **Design documents for `dioxus-swdir-tree` and future ports.
 No code changes, no test changes.**
 
-### Added — `docs/design/`
+### Added — `docs/src/internals/`
 
-A new `docs/design/` subdirectory ships five framework-agnostic
+A new `docs/src/internals/` subdirectory ships five framework-agnostic
 specification documents written to support development of
 `dioxus-swdir-tree` (and any other widget port targeting a
 different UI framework). Together they cover:
 
-- **[`core-design.md`](docs/design/core-design.md)** — the ten
+- **[`core-design.md`](docs/src/internals/core-design.md)** — the ten
   defining properties of the widget: what it is, what it is
   not, the non-blocking I/O model, the generation-tag
   protocol, why selection is by-path rather than by-node, the
@@ -220,7 +237,7 @@ different UI framework). Together they cover:
   state, orthogonality of the four state dimensions, and the
   scan lifecycle end-to-end.
 
-- **[`data-model.md`](docs/design/data-model.md)** — every
+- **[`data-model.md`](docs/src/internals/data-model.md)** — every
   field of `DirectoryTree` with its type shape, invariants,
   and derivation rules. Covers `TreeNode` (five named
   invariants), `TreeCache` and why it stores unfiltered
@@ -229,7 +246,7 @@ different UI framework). Together they cover:
   semantics, `DragState`, `prefetching_paths`,
   `SearchState`, and `icon_theme`.
 
-- **[`state-machine.md`](docs/design/state-machine.md)** —
+- **[`state-machine.md`](docs/src/internals/state-machine.md)** —
   precise transition specification for every event, written
   as pseudocode condition-action pairs: `Toggled` (four
   cases), `Loaded` (seven steps), `Selected` (all three
@@ -238,7 +255,7 @@ different UI framework). Together they cover:
   the `visible_rows()` algorithm and a composability table
   for all cross-dimension state combinations.
 
-- **[`feature-specs.md`](docs/design/feature-specs.md)** —
+- **[`feature-specs.md`](docs/src/internals/feature-specs.md)** —
   numbered `S<n>.<m>` behavioural clauses for all ten
   features, written as a test oracle. Covers lazy loading,
   display filters, single-select, keyboard navigation,
@@ -248,7 +265,7 @@ different UI framework). Together they cover:
   `FoldersOnly` hides hidden-directories rule (S2.2), and
   the press-release-same-row = click rule (S7.2).
 
-- **[`porting-to-dioxus.md`](docs/design/porting-to-dioxus.md)** —
+- **[`porting-to-dioxus.md`](docs/src/internals/porting-to-dioxus.md)** —
   concrete iced → Dioxus translation with code sketches:
   async scanning via `use_coroutine`, prefetch fan-out,
   keyboard via `onkeydown`, drag-and-drop synthesised from
@@ -264,7 +281,7 @@ different UI framework). Together they cover:
 - **Public API byte-identical to 0.7.0.** No new types,
   no renamed methods, no behaviour changes.
 - **Tests unchanged.** Still 154 tests, still all green.
-- The `docs/design/README.md` index was also added as the
+- The `docs/src/internals/README.md` index was also added as the
   entry point to the new subdirectory.
 
 ## [0.7.1] — 2026-04-30
@@ -379,15 +396,15 @@ intent and unifies naming.
 
 Task-oriented split by what the reader is trying to do:
 
-- **`docs/guide/`** — *"I want to build something."* Pages you
+- **`docs/src/guide/`** — *"I want to build something."* Pages you
   copy code from.
   - `configuration.md`, `multi-select.md`, `drag-and-drop.md`,
     `keyboard-navigation.md`, `incremental-search.md`,
     `prefetch.md`, `custom-executor.md`.
-- **`docs/reference/`** — *"I want to look up a fact."* Short
+- **`docs/src/reference/`** — *"I want to look up a fact."* Short
   pages; once you've scanned them, you're done.
   - `features.md`, `events.md`.
-- **`docs/internals/`** — *"I want to understand how this works,
+- **`docs/src/internals/`** — *"I want to understand how this works,
   or contribute."* For maintainers and curious readers.
   - `architecture.md`, `development.md`.
 
@@ -402,17 +419,17 @@ Lowercase-kebab-case throughout, and a couple of clearer names:
 
 | Before                | After                                    |
 | ---                   | ---                                      |
-| `docs/ARCHITECTURE.md` | `docs/internals/architecture.md`        |
-| `docs/DEVELOPMENT.md`  | `docs/internals/development.md`         |
-| `docs/configuration.md`| `docs/guide/configuration.md`           |
-| `docs/multi-select.md` | `docs/guide/multi-select.md`            |
-| `docs/drag-and-drop.md`| `docs/guide/drag-and-drop.md`           |
-| `docs/keyboard.md`     | `docs/guide/keyboard-navigation.md`     |
-| `docs/search.md`       | `docs/guide/incremental-search.md`      |
-| `docs/prefetch.md`     | `docs/guide/prefetch.md`                |
-| `docs/executor.md`     | `docs/guide/custom-executor.md`         |
-| `docs/features.md`     | `docs/reference/features.md`            |
-| `docs/events.md`       | `docs/reference/events.md`              |
+| `docs/ARCHITECTURE.md` | `docs/src/internals/architecture.md`        |
+| `docs/DEVELOPMENT.md`  | `docs/src/internals/development.md`         |
+| `docs/configuration.md`| `docs/src/guide/configuration.md`           |
+| `docs/multi-select.md` | `docs/src/guide/multi-select.md`            |
+| `docs/drag-and-drop.md`| `docs/src/guide/drag-and-drop.md`           |
+| `docs/keyboard.md`     | `docs/src/guide/keyboard-navigation.md`     |
+| `docs/search.md`       | `docs/src/guide/incremental-search.md`      |
+| `docs/prefetch.md`     | `docs/src/guide/prefetch.md`                |
+| `docs/executor.md`     | `docs/src/guide/custom-executor.md`         |
+| `docs/features.md`     | `docs/src/reference/features.md`            |
+| `docs/events.md`       | `docs/src/reference/events.md`              |
 
 ### Link maintenance
 

@@ -53,7 +53,7 @@ tree.drag_sources();     // &[PathBuf]
 tree.drop_target();      // Option<&Path> — hovered valid folder
 ```
 
-See [`examples/drag_drop.rs`](../../examples/drag_drop.rs) for a
+See [`examples/drag_drop.rs`](../../../examples/drag_drop.rs) for a
 complete working app with `fs::rename` on drop, post-move
 refresh, and a live drag-preview status bar.
 
@@ -119,5 +119,5 @@ tree.drag_sources();        // &[NodeId]
 tree.drop_target();         // Option<(NodeId, DropPosition)>
 ```
 
-See [`examples/item_tree.rs`](../../examples/item_tree.rs) for a
+See [`examples/item_tree.rs`](../../../examples/item_tree.rs) for a
 complete worked example that performs reorder/nest on drop.

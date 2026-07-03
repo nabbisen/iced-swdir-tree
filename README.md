@@ -5,45 +5,44 @@
 [![Documentation](https://docs.rs/iced-swdir-tree/badge.svg?version=latest)](https://docs.rs/iced-swdir-tree)
 [![Dependency Status](https://deps.rs/crate/iced-swdir-tree/latest/status.svg)](https://deps.rs/crate/iced-swdir-tree)
 
-> A batteries-included directory-tree widget for [iced](https://iced.rs) —
-> lazy-loading, async, multi-select, drag-and-drop, live search.
+> Tree widgets for [iced](https://iced.rs) — lazy-loading directory
+> views and generic in-memory trees, with multi-select,
+> drag-and-drop, keyboard control, and live search.
 
 ## Overview
 
-A reusable iced widget for displaying a directory tree with
-selection, lazy loading, filtering, and asynchronous traversal.
-Built on [swdir](https://crates.io/crates/swdir)'s `scan_dir` for
-single-level, non-recursive directory listings — ideal for GUI
-trees that expand one folder at a time.
+Two widgets that share one navigation model:
 
-The widget never blocks the UI thread on disk I/O; it never
-touches the filesystem beyond reading directory listings; and it
-ships its full event surface (selection, drag-drop, keyboard,
-search) behind a small, typed API that composes with the iced
-`Task` / `Subscription` model.
+- **`DirectoryTree`** — a lazy, async, cache-backed view of a real
+  filesystem directory, built on
+  [swdir](https://crates.io/crates/swdir)'s `scan_dir`. It expands one
+  folder at a time and never blocks the UI thread on disk I/O.
+- **`ItemTree<T>`** — a synchronous, in-memory tree over your own data
+  `T`, addressed by stable `NodeId`s, with key-based diffing that
+  preserves expansion and selection across edits.
+
+Both own **UI state only** — they never rename, delete, move, or write.
+Drag-and-drop reports the user's intent as an event and your app
+performs the change.
 
 ## When to use it
 
-Reach for this crate when your iced app needs **any** of:
-
-- A file/folder picker with multi-select.
-- A project-navigator pane (code editor, asset browser,
-  file-manager side panel).
-- Drag-and-drop between folders — you react to a
-  `DragCompleted { sources, destination }` event and perform the
-  move/copy/upload yourself.
-- A searchable directory view with real-time type-ahead
-  filtering.
+Reach for `DirectoryTree` when your iced app needs a file/folder
+picker, a project-navigator pane, drag-and-drop between folders, or a
+searchable directory view. Reach for `ItemTree<T>` when you have your
+own in-memory hierarchy — an outline, a category browser, a scene
+graph — that needs selection, keyboard control, search, and
+reorder/nest drag-and-drop.
 
 If you only need a one-shot "pick a file" dialog, the OS-native
-file-chooser is almost certainly a better fit.
+file-chooser is a better fit.
 
 ## Quick start
 
 ```toml
 [dependencies]
 iced = "0.14"
-iced-swdir-tree = "0.7"
+iced-swdir-tree = "0.9"
 ```
 
 ```rust,no_run
@@ -83,63 +82,67 @@ fn main() -> iced::Result {
 }
 ```
 
-For real lucide glyphs instead of the Unicode-symbol fallback,
-enable the `icons` feature and register the bundled font:
+The key line is `self.tree.update(event).map(Message::Tree)` — the
+widget returns a `Task` (e.g. to scan a folder off-thread), and you
+must return it so results flow back in.
 
-```toml
-iced-swdir-tree = { version = "0.7", features = ["icons"] }
-```
-
-```rust,ignore
-iced::application(App::new, App::update, App::view)
-    .font(iced_swdir_tree::LUCIDE_FONT_BYTES)
-    .run()
-```
-
-To plug in your own icon set (Material, Heroicons, custom labels, …) implement [`IconTheme`](docs/guide/icon-themes.md) and pass it to `with_icon_theme` — the `icons` feature can stay off in that case, shaving the lucide TTF out of your binary.
-
-Working apps live in [`examples/`](examples/): `keyboard_nav`,
-`multi_select`, `drag_drop`, `search`, `icon_theme`. Run them
-with `cargo run --example <name>`.
+Prefer a generic in-memory tree, or want the item-tree walkthrough?
+See [Getting started](docs/src/guide/getting-started.md). Working apps
+live in [`examples/`](examples/) — run any with
+`cargo run --example <name>`.
 
 ## Design notes
 
-- **Lazy, async, cache-backed.** Only the root is eagerly
-  created. Each expansion dispatches a scan through a pluggable
-  [`ScanExecutor`](docs/guide/custom-executor.md) and merges the result back
-  into a generation-tagged cache. Filter changes and search
-  re-derive from the cache — no re-scan.
-- **Every feature is orthogonal.** Selection survives filter
-  flips, subtree reloads, collapse/re-expand cycles, and
-  search-hidden rows. Drag state is separate from selection
-  state. Search doesn't mutate expansion. These invariants are
-  tested (the crate ships 140+ tests).
-- **The widget owns UI state, not filesystem state.** It never
-  renames, deletes, moves, or writes. Drag-and-drop produces a
-  `DragCompleted` event for your app to handle — the widget's
-  job ends at "here's what the user asked for."
+- **Lazy, async, cache-backed** (`DirectoryTree`). Only the root is
+  eagerly created; each expansion dispatches a scan through a pluggable
+  [`ScanExecutor`](docs/src/guide/custom-executor.md) and merges the
+  result into a generation-tagged cache. Filter and search re-derive
+  from the cache — no re-scan.
+- **Key-based diffing** (`ItemTree<T>`). Feed a new tree with
+  `set_tree`; expansion and selection are preserved for every stable
+  `NodeId`, so you can rebuild on every edit without reconciling UI
+  state by hand.
+- **Every feature is orthogonal.** Selection survives filter flips,
+  subtree reloads, collapse cycles, and search-hidden rows. Drag state
+  is separate from selection. Search does not mutate expansion. These
+  invariants are enforced by the test suite (213 tests).
+- **The widget owns UI state, not data state.** Neither widget writes,
+  renames, deletes, or moves. Drag-and-drop emits an event
+  (`DragCompleted`) for your app to act on — the widget's job ends at
+  "here is what the user asked for."
 - **Safety valves where defaults matter.** Prefetch
-  (`with_prefetch_limit`) won't enter `.git`, `node_modules`,
-  `target`, or other common "don't scan this" directories out
-  of the box; the skip list is
-  [configurable](docs/guide/prefetch.md#safety-valve-the-skip-list).
-  `max_depth` caps recursion. Generation tags drop stale scan
-  results that returned after a collapse.
+  (`with_prefetch_limit`) skips `.git`, `node_modules`, `target`, and
+  similar by default; `max_depth` caps recursion; generation tags drop
+  stale scan results that return after a collapse. See
+  [Parallel pre-expansion](docs/src/guide/prefetch.md).
 
-## Documentation
+## More detail
 
-**📚 Full reference in [docs/](docs/)**, organized by intent:
+Full documentation lives in [`docs/`](docs/) as an
+[mdbook](https://rust-lang.github.io/mdBook/), organized by audience:
 
-- **Guide** (build something) — [Configuration](docs/guide/configuration.md)
-  · [Multi-select](docs/guide/multi-select.md)
-  · [Drag-and-drop](docs/guide/drag-and-drop.md)
-  · [Keyboard navigation](docs/guide/keyboard-navigation.md)
-  · [Incremental search](docs/guide/incremental-search.md)
-  · [Parallel pre-expansion](docs/guide/prefetch.md)
-  · [Custom scan executor](docs/guide/custom-executor.md)
-  · [Icon themes](docs/guide/icon-themes.md)
-- **Reference** (look something up) — [Features](docs/reference/features.md)
-  · [Events](docs/reference/events.md)
-- **Internals** (understand or contribute) — [Architecture](docs/internals/architecture.md)
-  · [Development & testing](docs/internals/development.md)
+- **User Guide** — [Getting started](docs/src/guide/getting-started.md)
+  · [Directory tree](docs/src/guide/directory-tree.md)
+  · [Item tree](docs/src/guide/item-tree.md)
+  · [Drag and drop](docs/src/guide/drag-and-drop.md)
+  · [Multi-select](docs/src/guide/multi-select.md)
+  · [Keyboard navigation](docs/src/guide/keyboard-navigation.md)
+  · [Incremental search](docs/src/guide/incremental-search.md)
+  · [Icon themes](docs/src/guide/icon-themes.md)
+  · [FAQ](docs/src/guide/faq.md)
+- **Reference** — [Feature list](docs/src/reference/features.md)
+  · [Events](docs/src/reference/events.md)
+  · [Feature specifications](docs/src/internals/feature-specs.md)
+- **Maintainers & Contributors** —
+  [Design principles](docs/src/internals/core-design.md)
+  · [Architecture](docs/src/internals/architecture.md)
+  · [Data model](docs/src/internals/data-model.md)
+  · [State machine](docs/src/internals/state-machine.md)
+  · [Porting to other frameworks](docs/src/internals/porting-to-dioxus.md)
+  · [Development & testing](docs/src/internals/development.md)
 - **Release notes** — [CHANGELOG](CHANGELOG.md) · [ROADMAP](ROADMAP.md)
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE). See also the
+[NOTICE](NOTICE) file.

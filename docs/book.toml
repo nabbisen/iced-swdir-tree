@@ -1,0 +1,15 @@
+[book]
+title = "iced-swdir-tree"
+description = "A directory-tree and generic-tree widget for the iced GUI framework, powered by swdir."
+authors = ["nabbisen"]
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "rust"
+git-repository-url = "https://github.com/nabbisen/iced-swdir-tree"
+edit-url-template = "https://github.com/nabbisen/iced-swdir-tree/edit/main/docs/{path}"
+
+[output.html.fold]
+enable = true
+level = 1

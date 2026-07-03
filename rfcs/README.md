@@ -1,7 +1,7 @@
 # RFCs
 
 Design proposals for `iced-swdir-tree`. Governed by the
-lifecycle policy at `docs/design/README.md`.
+lifecycle policy at `docs/src/internals/README.md`.
 
 ## Proposed
 

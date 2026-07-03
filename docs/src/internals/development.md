@@ -29,5 +29,5 @@ themes (UnicodeTheme/LucideTheme stock glyphs, IconSpec builder,
 custom theme pluggability, object-safety of `Arc<dyn IconTheme>`,
 and view-layer dispatch via a CountingTheme that verifies the
 widget actually consults the theme). See the
-[CHANGELOG](../../CHANGELOG.md) for the per-release breakdown and
-[ROADMAP](../../ROADMAP.md) for what's next.
+[CHANGELOG](../../../CHANGELOG.md) for the per-release breakdown and
+[ROADMAP](../../../ROADMAP.md) for what's next.

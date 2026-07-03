@@ -124,7 +124,7 @@ theme, and no lucide bytes at all.
 
 ## See also
 
-- [`examples/icon_theme.rs`](../../examples/icon_theme.rs) — a
+- [`examples/icon_theme.rs`](../../../examples/icon_theme.rs) — a
   three-way theme switcher (Unicode / Label / Ascii) that
   demonstrates the full trait surface.
 - [Configuration](configuration.md) — where `with_icon_theme`
