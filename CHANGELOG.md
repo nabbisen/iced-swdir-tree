@@ -5,6 +5,43 @@ All notable changes to `iced-swdir-tree` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the crate follows [Semantic Versioning](https://semver.org/).
 
+## [0.9.3] — 2026-07-03
+
+Dependency update release. No public API or behaviour changes.
+
+### Changed
+
+- Refreshed the dependency lockfile and bumped the crate version to
+  `0.9.3`.
+
+---
+
+## [0.9.2] — 2026-07-03
+
+Documentation and handoff release. No public API or behaviour changes.
+
+### Documentation
+
+- Restructured `docs/` into an [mdbook](https://rust-lang.github.io/mdBook/)
+  under `docs/src/`, organized by audience: **User Guide** (New Users),
+  **Reference** (Intermediate Users), and **Maintainers & Contributors**.
+  Added `docs/book.toml` and `docs/src/SUMMARY.md`.
+- New guide pages: `getting-started`, `directory-tree`, `item-tree`,
+  and `faq`; new `rfc-process` page for contributors. The former
+  framework-agnostic `docs/design/` specifications now live under
+  `docs/src/internals/` and are surfaced under Reference.
+- Rewrote `README.md` to a concise, standard structure (hero,
+  overview, when-to-use, quick start, design notes, links) covering
+  **both** widgets; refreshed the stale version pin and test count.
+- Added `rfcs/handoffs/0.9.0/HANDOFF.md`, documenting the
+  `iced-swdir-tree` to `dioxus-swdir-tree` handoff for RFC 002 and
+  the share-design-not-code decision.
+- Added a `NOTICE` file (Apache-2.0, author nabbisen).
+- Removed a stray empty `iced-swdir-tree-0.8.0/` directory that had
+  been accidentally packaged.
+
+---
+
 ## [0.9.1] — 2026-06-14
 
 Audit-driven patch release. No new public API; no behaviour changes
@@ -40,23 +77,6 @@ for code not exercising the fixed edge case.
   `set_tree_while_drag_active_clears_drag`,
   `disabling_dnd_while_drag_active_clears_drag`,
   `set_search_query_preserves_drag_state`.
-
-### Documentation
-
-- Restructured `docs/` into an [mdbook](https://rust-lang.github.io/mdBook/)
-  under `docs/src/`, organized by audience: **User Guide** (New Users),
-  **Reference** (Intermediate Users), and **Maintainers & Contributors**.
-  Added `docs/book.toml` and `docs/src/SUMMARY.md`.
-- New guide pages: `getting-started`, `directory-tree`, `item-tree`,
-  and `faq`; new `rfc-process` page for contributors. The former
-  framework-agnostic `docs/design/` specifications now live under
-  `docs/src/internals/` and are surfaced under Reference.
-- Rewrote `README.md` to a concise, standard structure (hero,
-  overview, when-to-use, quick start, design notes, links) covering
-  **both** widgets; refreshed the stale version pin and test count.
-- Added a `NOTICE` file (Apache-2.0, author nabbisen).
-- Removed a stray empty `iced-swdir-tree-0.8.0/` directory that had
-  been accidentally packaged.
 
 ---
 
@@ -281,7 +301,7 @@ different UI framework). Together they cover:
 - **Public API byte-identical to 0.7.0.** No new types,
   no renamed methods, no behaviour changes.
 - **Tests unchanged.** Still 154 tests, still all green.
-- The `docs/src/internals/README.md` index was also added as the
+- The `docs/design/README.md` index was also added as the
   entry point to the new subdirectory.
 
 ## [0.7.1] — 2026-04-30

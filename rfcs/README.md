@@ -1,7 +1,7 @@
 # RFCs
 
 Design proposals for `iced-swdir-tree`. Governed by the
-lifecycle policy at `docs/src/internals/README.md`.
+lifecycle policy at `docs/src/internals/rfc-process.md`.
 
 ## Proposed
 
@@ -18,4 +18,4 @@ lifecycle policy at `docs/src/internals/README.md`.
 
 | ID  | Title | Reason |
 | --- | ----- | ------ |
-| [003](archive/003-extract-swdir-tree-core.md) | Extract a framework-agnostic `swdir-tree-core` | Withdrawn — share design, not code; see `HANDOFF.md` |
+| [003](archive/003-extract-swdir-tree-core.md) | Extract a framework-agnostic `swdir-tree-core` | Withdrawn — share design, not code; see [handoff](handoffs/0.9.0/HANDOFF.md) |

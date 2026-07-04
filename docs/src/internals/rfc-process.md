@@ -1,8 +1,8 @@
 # RFC process
 
 Design decisions for this crate are recorded as RFCs under the
-[`rfcs/`](../../../rfcs/) directory, following the lifecycle policy in
-`000-rfc-lifecycle-policy.md`.
+[`rfcs/`](../../../rfcs/) directory. This page summarizes the lifecycle
+policy used by the project.
 
 ## Lifecycle
 

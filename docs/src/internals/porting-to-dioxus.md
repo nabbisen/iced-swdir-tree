@@ -317,13 +317,15 @@ captured even when the mouse leaves the tree.
 
 > **Note:** This document previously recommended extracting a shared
 > `swdir-tree-core` crate. That recommendation was withdrawn (RFC 003,
-> archived). See `HANDOFF.md` for the full rationale.
+> archived). See the
+> [`v0.9.0` handoff](../../../rfcs/handoffs/0.9.0/HANDOFF.md) for
+> the full rationale.
 
 The resolved position is: **share the design, not the code.**
 Each framework implements the shared spec idiomatically, using the
 data structures and async model that fit its architecture.
 
-The shared assets are the documents in `docs/design/` — especially
+The shared assets are the documents in `docs/src/internals/` — especially
 `feature-specs.md` (the S-clause oracle each side's tests validate
 against) and `state-machine.md` (the precise transition spec). The
 Dioxus core (`dioxus-swdir-tree-core`) was built "following the
@@ -395,8 +397,9 @@ Items marked ✅ are already complete in `dioxus-swdir-tree` v0.8.0.
 - ✅ Incremental search — matches against display string, `T: Display`.
 - ✅ Dioxus component — `ItemTreeView`, `item_view.rs`, `item_row.rs`.
 - [ ] **ItemTree drag-and-drop** ← **not yet implemented; primary
-  handoff item from iced-swdir-tree v0.9.0.** See `HANDOFF.md` for
-  the full spec and `docs/design/feature-specs.md` S11.9–S11.16 for
+  handoff item from iced-swdir-tree v0.9.0.** See the
+  [`v0.9.0` handoff](../../../rfcs/handoffs/0.9.0/HANDOFF.md) for
+  the full spec and `feature-specs.md` S11.9–S11.16 for
   the oracle. Summary:
   - `DropPosition { Before, Into, After }` — before/into/after a target.
   - `with_drag_and_drop(bool)` opt-in (default off).
@@ -410,4 +413,3 @@ Items marked ✅ are already complete in `dioxus-swdir-tree` v0.8.0.
   - `Escape` cancels (only while drag active).
   - View: three zones per row — thin `Before` strip, row body (`Into`),
     thin `After` strip — each a separate `onmouseenter/leave/up` target.
-

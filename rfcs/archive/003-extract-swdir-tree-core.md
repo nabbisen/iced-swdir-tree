@@ -3,7 +3,7 @@
 **Status.** Withdrawn — the extraction was decided against after discussion.
 The resolved position is that the shared asset is the **design** (`docs/src/internals/`),
 not a shared crate; each framework implements the spec idiomatically.
-See [HANDOFF.md](../../HANDOFF.md) for the full rationale and its implications
+See [the v0.9.0 handoff](../handoffs/0.9.0/HANDOFF.md) for the full rationale and its implications
 for `dioxus-swdir-tree`.  
 The Dioxus project's internal `dioxus-swdir-tree-core` split is the right
 architectural call *for Dioxus*. It is not a template `iced-swdir-tree`

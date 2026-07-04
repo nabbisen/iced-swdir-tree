@@ -1,6 +1,7 @@
 # Roadmap
 
-Current: **v0.9.0** · Future: **v1.0.0** (API freeze — no code changes planned).
+Current: **v0.9.3** · Future: **v1.0.0** (API freeze — hard-gated on
+explicit owner confirmation).
 
 Eight feature milestones have shipped as minor-version releases;
 patch releases have handled internal refactors, documentation,
@@ -24,10 +25,14 @@ that now includes drag-and-drop for both widgets.
 | `0.7.2`  | ✅ shipped | Framework-agnostic design documents (`docs/src/internals/`).      |
 | `0.8.0`  | ✅ shipped | Generic item tree — `ItemTree<T>` (RFC 001).               |
 | `0.9.0`  | ✅ shipped | Drag-and-drop for `ItemTree<T>` (RFC 002).                 |
-| `1.0.0`  | 🎯 next    | API freeze release. No code changes from `0.9.x`.          |
+| `0.9.1`  | ✅ shipped | Audit patch for ItemTree drag composability.               |
+| `0.9.2`  | ✅ shipped | Documentation and handoff refresh.                         |
+| `0.9.3`  | ✅ shipped | Dependencies updated.                                      |
+| `1.0.0`  | gated      | API freeze release; requires explicit owner confirmation.  |
 
-Patch releases (internal refactors, docs): `0.4.1`, `0.4.2`,
-`0.6.2`, `0.6.3`. Summaries below.
+Patch releases (internal refactors, docs, audits, dependencies):
+`0.4.1`, `0.4.2`, `0.6.2`, `0.6.3`, `0.9.1`, `0.9.2`,
+`0.9.3`. Summaries below.
 
 ---
 
@@ -165,9 +170,27 @@ Validity is checked via an O(depth) parent-map chain walk
 (snapshotted once at drag start). Includes Escape-to-cancel,
 deferred-selection, 27 new tests, and a worked example.
 
+### v0.9.1 — Audit patch ✅
+See [CHANGELOG](CHANGELOG.md#091--2026-06-14). Fixes
+`ItemTree::set_tree` so it clears any in-flight drag state before
+rebuilding the tree, preventing stale parent-map snapshots from
+being used after a model refresh. Adds composability tests for the
+documented drag/search/rebuild rules.
+
+### v0.9.2 — Documentation and handoff refresh ✅
+See [CHANGELOG](CHANGELOG.md#092--2026-07-03). Moves the docs into
+an mdbook layout, refreshes the README and guide pages, adds the
+Apache-2.0 NOTICE file, and records the v0.9.0 cross-project handoff
+under `rfcs/handoffs/0.9.0/HANDOFF.md`.
+
+### v0.9.3 — Dependencies updated ✅
+See [CHANGELOG](CHANGELOG.md#093--2026-07-03). Refreshes the
+dependency lockfile. No public API or behaviour changes.
+
 ## Next: v1.0.0
 
 With v0.9.0 shipped, every roadmap item originally planned for
 v1.0 has landed. The 1.0 release is an API-freeze marker, not a
 new feature release: it takes whatever is at v0.9.x and stamps
-it as the stable surface.
+it as the stable surface. Do not initiate, draft, or publish v1.0.0
+without explicit owner confirmation.
